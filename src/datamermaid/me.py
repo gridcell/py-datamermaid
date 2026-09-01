@@ -25,10 +25,30 @@ def get_me(
     than a paginated list, so the response is returned as a dict rather than a
     data frame.
 
+    Parameters
+    ----------
+    client:
+        Client to issue the request with.  Defaults to the process-wide client.
+    token:
+        Bearer token for this call only.  Mutually exclusive with ``client``.
+
+    Returns
+    -------
+    dict
+        The profile as MERMAID returns it: ``id``, ``first_name``,
+        ``last_name``, ``email``, ``full_name``, ``projects`` and so on.
+
+    Raises
+    ------
+    AuthenticationError
+        If no access token can be resolved, or MERMAID rejects it.
+
     Examples
     --------
     >>> import datamermaid
-    >>> datamermaid.get_me()  # doctest: +SKIP
+    >>> me = datamermaid.get_me()  # doctest: +SKIP
+    >>> me["full_name"]  # doctest: +SKIP
+    'Ada Lovelace'
     """
     with client_context(client, token) as api:
         payload = api.get_one("me", require_auth=True)

@@ -170,7 +170,18 @@ def _write_cache(access_token: str, expires_at: float) -> Path:
 
 
 def clear_cached_token() -> None:
-    """Delete the cached token, if any."""
+    """Delete the cached token, if any.
+
+    The next :func:`authenticate` call then signs in afresh.  Only the on-disk
+    cache is touched; a token in ``MERMAID_API_TOKEN`` keeps being used.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.clear_cached_token()  # doctest: +SKIP
+    >>> datamermaid.get_token() is None  # doctest: +SKIP
+    True
+    """
     with contextlib.suppress(OSError):
         _cache_path().unlink(missing_ok=True)
 
@@ -531,8 +542,21 @@ def resolve_token(explicit_token: str | None = None) -> ResolvedToken | None:
 def get_token() -> str | None:
     """Return a usable access token from the environment or the cache.
 
-    Returns ``None`` when the user has never signed in (or the cached token has
-    expired); call :func:`authenticate` to obtain one interactively.
+    Mirrors mermaidr's ``mermaid_token()``, except that it never prompts:
+    ``MERMAID_API_TOKEN`` is checked first, then the cache written by
+    :func:`authenticate`.
+
+    Returns
+    -------
+    str or None
+        The bearer token, or ``None`` when the user has never signed in (or
+        the cached token has expired); call :func:`authenticate` to obtain
+        one interactively.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> token = datamermaid.get_token() or datamermaid.authenticate()  # doctest: +SKIP
     """
     resolved = resolve_token()
     return resolved.access_token if resolved else None
@@ -560,6 +584,26 @@ def authenticate(
     timeout:
         Seconds to wait for the browser redirect before falling back to the
         device code flow.
+
+    Returns
+    -------
+    str
+        The bearer token, which is also cached.  When ``MERMAID_API_TOKEN`` is
+        set, or a non-expired token is cached, it is returned without any
+        sign-in.
+
+    Raises
+    ------
+    AuthenticationError
+        If the sign-in does not complete, e.g. Auth0 rejects the request or
+        the user never finishes the flow.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.authenticate()  # opens a browser  # doctest: +SKIP
+    >>> datamermaid.authenticate(use_device_code=True)  # over SSH  # doctest: +SKIP
+    >>> datamermaid.authenticate(new_user=True)  # sign in as someone else  # doctest: +SKIP
     """
     if new_user:
         clear_cached_token()

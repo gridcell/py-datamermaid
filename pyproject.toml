@@ -9,17 +9,24 @@ description = "Python client for the MERMAID coral reef monitoring API"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+license-files = ["LICENSE"]
 authors = [{ name = "Dustin Sampson", email = "dustin@sparkgeo.com" }]
-keywords = ["mermaid", "coral", "reef", "api", "datamermaid"]
+maintainers = [{ name = "Dustin Sampson", email = "dustin@sparkgeo.com" }]
+keywords = ["mermaid", "mermaidr", "coral", "reef", "marine", "ecology", "api", "datamermaid"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
 ]
 dependencies = ["httpx>=0.24", "pandas>=1.5"]
 
@@ -28,19 +35,23 @@ dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5"]
 
 [project.urls]
 Homepage = "https://github.com/gridcell/py-datamermaid"
+Documentation = "https://github.com/gridcell/py-datamermaid#readme"
 Source = "https://github.com/gridcell/py-datamermaid"
+Issues = "https://github.com/gridcell/py-datamermaid/issues"
+"MERMAID" = "https://datamermaid.org"
 "MERMAID API" = "https://api.datamermaid.org/v1/"
+"mermaidr (R)" = "https://github.com/data-mermaid/mermaidr"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/datamermaid"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+testpaths = ["tests", "src/datamermaid"]
+addopts = "-ra --strict-markers --doctest-modules"
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]

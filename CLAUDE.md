@@ -60,18 +60,71 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+Pure-Python package (`hatchling` build, `src/` layout). Python 3.10+; runtime
+dependencies are `httpx` and `pandas` only.
 
 ```bash
-# Example:
-# npm install
-# npm test
+pip install -e ".[dev]"      # package + pytest, respx, ruff
+pytest                       # unit tests + doctests; fully offline (respx / MockTransport)
+ruff check .                 # lint (E, F, I, UP, B, W; line length 100)
+ruff format --check .        # formatting
+python examples/quickstart.py  # README workflow against a mocked API
 ```
+
+CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
+`pytest` on Python 3.10 and 3.12. All three must pass; there is no network in
+tests, so never add a test that hits `api.datamermaid.org`.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+`datamermaid` is a port of the R package [mermaidr](https://github.com/data-mermaid/mermaidr):
+each `mermaid_*` function maps to a same-named function without the prefix, and
+tibbles become `pandas.DataFrame`s. The README's migration table is the
+authoritative list; `tests/test_docs.py` checks it against `__all__`.
+
+```
+src/datamermaid/
+  __init__.py          public surface; `__all__` is the contract
+  client.py            MermaidClient: httpx wrapper, pagination, CSV, lazy auth; default_client()
+  auth.py              Auth0 PKCE + device-code sign-in, token cache, MERMAID_API_TOKEN
+  exceptions.py        MermaidError > MermaidAPIError, AuthenticationError
+  utils.py             records -> DataFrame, list-column collapsing (mermaidr semantics)
+  projects.py          get_projects / search_projects / get_my_projects / search_my_projects
+  me.py                get_me (single object, returns dict)
+  project_endpoints.py projects/{id}/{endpoint}: sites, managements, generic getter,
+                       as_project_ids() coercion and the default project
+  project_data.py      get_project_data(): method x data level -> CSV endpoints
+  endpoints.py         global unauthenticated endpoints: sites, managements, reference, choices
+  import_.py           write path: template/options, option checks, ingest, bulk actions
+tests/                 pytest + respx; fixtures/ holds trimmed real MERMAID CSVs
+examples/quickstart.py the README walk-through on an httpx.MockTransport (run by tests)
+```
+
+Request flow: a public function resolves its `client=`/`token=` arguments via
+`client_context()` (client.py), which yields the process-wide `MermaidClient`
+or a throwaway one carrying the token. `MermaidClient.get()` walks MERMAID's
+`{count, next, previous, results}` envelope honouring `limit`; `get_one()`
+fetches bare objects (`me/`); `get_csv()` parses the per-project CSV
+endpoints. Endpoints marked `require_auth=True` resolve a token lazily
+(explicit > `MERMAID_API_TOKEN` > cache) and raise `AuthenticationError`
+before any request when none is found.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Mirror mermaidr's behaviour and argument names (singular: `country=`, `tag=`)
+  unless Python idiom clearly wins; note deviations in the README migration table.
+- Every public function: numpy-style docstring with Parameters / Returns /
+  Raises / Examples (`# doctest: +SKIP` for anything that needs the network;
+  offline examples run as doctests via `pytest --doctest-modules`).
+- Adding a public name: export it in the module's `__all__`, in
+  `datamermaid/__init__.py`'s `__all__`, and in the README (migration table or
+  "Python-only additions").
+- Argument mistakes raise `ValueError` before any request; HTTP failures raise
+  `MermaidAPIError`; missing/rejected logins raise `AuthenticationError`.
+- Anything that writes to MERMAID or acts on a whole project needs an explicit
+  `confirm=True`-style argument — nothing prompts, so it can run unattended.
+- Tests are offline. Mock with `respx` against `API_BASE_URL` (see
+  `tests/conftest.py` helpers) or `httpx.MockTransport`; the autouse fixtures
+  isolate the token cache and default project.
+- `CLAUDE.md` and `AGENTS.md` are independent files: mirror substantive edits
+  to both.

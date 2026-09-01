@@ -1,89 +1,56 @@
 # datamermaid
 
-A Python client for the [MERMAID](https://datamermaid.org) coral reef monitoring API,
-a port of the R package [mermaidr](https://github.com/data-mermaid/mermaidr).
+A Python client for the [MERMAID](https://datamermaid.org) coral reef
+monitoring API, and a port of the R package
+[mermaidr](https://github.com/data-mermaid/mermaidr). Every `mermaid_*`
+function in mermaidr has a `datamermaid` equivalent — see
+[Migrating from mermaidr](#migrating-from-mermaidr) — and tabular results come
+back as [pandas](https://pandas.pydata.org) `DataFrame`s.
+
+The workflow is mermaidr's: **authenticate → find projects → pull project
+data → pull reference data**. Public data needs no account.
+
+- [Install](#install)
+- [Authentication](#authentication)
+- [Quickstart](#quickstart)
+- [Finding projects](#finding-projects)
+- [Project data](#project-data)
+  - [`get_project_data()` — methods and data levels](#get_project_data--methods-and-data-levels)
+- [Global data](#global-data)
+- [Return shapes](#return-shapes)
+- [Errors](#errors)
+- [Importing data](#importing-data)
+- [Migrating from mermaidr](#migrating-from-mermaidr)
+- [Development](#development)
+- [License](#license)
 
 ## Install
 
 ```bash
-pip install -e .
+pip install datamermaid
 ```
 
-For development (tests and linting):
+Or, from a checkout of this repository:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .          # the package
+pip install -e ".[dev]"   # plus pytest, respx and ruff
 ```
 
-## Usage
-
-```python
-import datamermaid
-
-projects = datamermaid.get_projects(limit=5)
-print(projects[["id", "name", "countries", "num_sites"]])
-```
-
-`get_projects()` returns a `pandas.DataFrame`. Pass `limit=None` (the default) to
-fetch every project — pagination is handled for you. Test projects are excluded
-unless you pass `include_test_projects=True`.
-
-`search_projects()` narrows the list by name, country, or tag. Each is an
-optional case-insensitive substring match:
-
-```python
-fijian = datamermaid.search_projects(country="Fiji", tag="WCS")
-```
-
-Endpoints that do not require authentication work out of the box.
-
-Failed requests raise `datamermaid.MermaidAPIError`, which carries the HTTP
-`status_code`.
-
-### Global data
-
-MERMAID publishes its sites, management regimes, reference tables and summary
-data without a login. Each getter returns a `DataFrame` and takes the same
-`limit` as `get_projects()`:
-
-```python
-sites = datamermaid.get_sites(limit=100)
-managements = datamermaid.get_managements()
-events = datamermaid.get_summary_sampleevents(limit=1000)  # large; sample it
-
-fish_families = datamermaid.get_reference("fishfamilies")
-```
-
-`get_reference()` accepts `"fishfamilies"`, `"fishgenera"`, `"fishspecies"`,
-`"benthicattributes"` or `"fishgroupings"` and raises `ValueError` listing those
-options for anything else.
-
-`get_choices()` returns MERMAID's controlled vocabularies as a dict of frames,
-one per vocabulary, and `countries()` pulls the country names out of it:
-
-```python
-choices = datamermaid.get_choices()
-choices["reeftypes"]  # DataFrame with id, name, ...
-datamermaid.countries()[:3]  # ['Afghanistan', 'Albania', 'Algeria']
-```
-
-Any other global endpoint can be reached with the generic getter, which passes
-extra keyword arguments through as query parameters. Endpoint names outside
-`datamermaid.KNOWN_ENDPOINTS` are still requested, with a `UserWarning`:
-
-```python
-datamermaid.get_endpoint("fishsizes")
-datamermaid.get_endpoint("sites", country="Fiji", limit=50)
-```
+Python 3.10 or newer; the only runtime dependencies are `httpx` and `pandas`.
 
 ## Authentication
 
 Your own projects, and anything else behind a login, need a MERMAID access
 token. Tokens are issued by MERMAID's Auth0 tenant and last about a day.
+Public endpoints — `get_projects()`, `get_sites()`, `get_reference()`, and so
+on — work without one.
 
 ### Signing in from a browser
 
 ```python
+import datamermaid
+
 datamermaid.authenticate()
 ```
 
@@ -107,17 +74,6 @@ To sign in as a different user, discard the saved token first:
 datamermaid.authenticate(new_user=True)
 ```
 
-Once signed in:
-
-```python
-me = datamermaid.get_me()  # a dict
-my_projects = datamermaid.get_my_projects()  # a DataFrame
-matching = datamermaid.search_my_projects(country="Fiji")  # a DataFrame
-```
-
-`get_me()` returns a dict rather than a frame, because `me/` answers with a
-single object.
-
 ### The token cache
 
 The token is written to `$XDG_CONFIG_HOME/datamermaid/token.json` (by default
@@ -126,6 +82,8 @@ expiry. It is reused until it expires, and
 `datamermaid.authenticate(new_user=True)` — or
 `datamermaid.clear_cached_token()` — removes it. A token the API rejects is
 discarded too, so the next `authenticate()` call signs in afresh.
+`get_token()` returns the current token without ever prompting, or `None` when
+there is none.
 
 ### `MERMAID_API_TOKEN` (CI and servers)
 
@@ -141,41 +99,105 @@ export MERMAID_API_TOKEN="eyJhbGciOi..."
 datamermaid.get_my_projects()  # uses MERMAID_API_TOKEN
 ```
 
-A token can also be passed explicitly, which overrides everything else:
+### Passing a token explicitly
+
+Every function that needs a login takes `token=`, which overrides everything
+else for that call, and `client=`, for reusing one connection:
 
 ```python
 from datamermaid import MermaidClient
 
 my_projects = datamermaid.get_my_projects(token="eyJhbGciOi...")
 
-# ...or reuse one client across calls:
 with MermaidClient(token="eyJhbGciOi...") as client:
     me = datamermaid.get_me(client=client)
+    sites = datamermaid.get_project_sites(my_projects, client=client)
 ```
 
-Authentication problems raise `datamermaid.AuthenticationError`, whose message
-says how to obtain a fresh token.
+`set_default_client()` swaps the client every module-level function uses,
+which is how to point the package at another API root or, as
+[`examples/quickstart.py`](examples/quickstart.py) does, at a mock transport.
 
-### Project endpoints
+## Quickstart
 
-A project's sites and management regimes live behind
-`projects/{project_id}/{endpoint}/` and need a login, since only project
-members can read them. The token is resolved as described above, so once you
-are signed in no token has to be passed:
+The mermaidr README's walk-through, in Python:
 
 ```python
-sites = datamermaid.get_project_sites("00673bec-...")
-managements = datamermaid.get_project_managements("00673bec-...")
+import datamermaid
 
-# ...or supply one for this call only:
-sites = datamermaid.get_project_sites("00673bec-...", token="eyJhbGciOi...")
+datamermaid.authenticate()
+
+me = datamermaid.get_me()
+me["full_name"]
+
+# Your projects, as a DataFrame
+projects = datamermaid.get_my_projects()
+projects[["id", "name", "countries", "num_sites"]]
+
+# ...or just the ones matching a country or tag
+fiji = datamermaid.search_my_projects(country="Fiji", tag="WCS Fiji")
+
+# Anything that takes a project accepts an id, a list of ids, or a frame of projects
+sites = datamermaid.get_project_sites(fiji)
+managements = datamermaid.get_project_managements(fiji)
+
+# Survey data: one method and one aggregation level gives a single frame
+sample_events = datamermaid.get_project_data(fiji, "fishbelt", "sampleevents")
+sample_events[["site", "sample_date", "biomass_kgha_avg"]]
+
+# Ask for several and get a nested dict of frames
+fishbelt = datamermaid.get_project_data(fiji, "fishbelt", "all")
+fishbelt["fishbelt"]["observations"]
+
+# Set a default project to leave it out of later calls
+datamermaid.set_default_project(fiji)
+datamermaid.get_project_data(method="benthicpit", data="sampleunits")
+
+# Reference data needs no login
+fish_families = datamermaid.get_reference("fishfamilies")
 ```
 
-The project can be given as an id, a list of ids, a project record, or the
-`DataFrame` returned by `get_projects()` — anything `as_project_ids()` accepts.
-Passing several projects issues one request per project and returns a single
-concatenated frame whose leading `project` column names the project each row
-came from. `limit` applies per project.
+[`examples/quickstart.py`](examples/quickstart.py) runs exactly this against a
+mocked API, so it can be executed offline:
+
+```bash
+python examples/quickstart.py
+```
+
+## Finding projects
+
+```python
+projects = datamermaid.get_projects(limit=5)  # public; no login needed
+projects[["id", "name", "countries", "num_sites"]]
+```
+
+`get_projects()` returns a `DataFrame` with one row per project. Pass
+`limit=None` (the default) to fetch every project — pagination is handled for
+you. Test projects are excluded unless you pass `include_test_projects=True`.
+
+`search_projects()` narrows the list by name, country, or tag. Each is an
+optional case-insensitive substring match, applied client-side after every
+project has been read, so `limit` caps the *matches*:
+
+```python
+fijian = datamermaid.search_projects(country="Fiji", tag="WCS")
+```
+
+Once signed in, `get_my_projects()` and `search_my_projects()` do the same for
+the projects you are a member of.
+
+### Naming a project
+
+Every function that takes a `project` accepts the same shapes: a project id,
+a list of ids, a project record (any mapping with an `id`), the `DataFrame`
+returned by `get_projects()`, or a single row of it. `as_project_ids()` is the
+coercion behind this, and is exposed for validating an argument up front:
+
+```python
+datamermaid.as_project_ids(projects)  # ['00673bec-...', '2c0c9857-...']
+```
+
+### The default project
 
 Set a default project once to leave it out of every later call:
 
@@ -189,8 +211,24 @@ datamermaid.set_default_project(None)  # clear it
 The default is also read from the `MERMAID_DEFAULT_PROJECT` environment
 variable (comma separated for several projects), and `set_default_project()`
 exports it there so subprocesses inherit it. Calling a project function with no
-project and no default raises `ValueError`; calling one when no token can be
-resolved raises `datamermaid.AuthenticationError` before any request is made.
+project and no default raises `ValueError`.
+
+## Project data
+
+A project's sites, management regimes, and survey data live behind
+`projects/{project_id}/...` and need a login, since only project members can
+read them. The token is resolved as described under
+[Authentication](#authentication), so once you are signed in nothing has to be
+passed:
+
+```python
+sites = datamermaid.get_project_sites("00673bec-...")
+managements = datamermaid.get_project_managements("00673bec-...")
+```
+
+Passing several projects issues one request per project and returns a single
+concatenated frame whose leading `project` column names the project each row
+came from. `limit` applies per project.
 
 Other project endpoints can be reached with the generic getter, which takes
 extra keyword arguments as query parameters:
@@ -199,28 +237,37 @@ extra keyword arguments as query parameters:
 datamermaid.get_project_endpoint("00673bec-...", "sites", country="Fiji")
 ```
 
-### Project data
+### `get_project_data()` — methods and data levels
 
 `get_project_data()` returns a project's survey data. A survey `method` and an
 aggregation level (`data`) name a CSV endpoint under the project, which is
-parsed into a `pandas.DataFrame`:
+parsed into a `DataFrame`:
 
 ```python
 observations = datamermaid.get_project_data("00673bec-...", "fishbelt", "observations")
 sample_events = datamermaid.get_project_data("00673bec-...", "fishbelt", "sampleevents")
 ```
 
-`project` takes the same shapes as the endpoints above, and the default project
-is used when it is omitted. When more than one project is named, the rows are
-stacked and a leading `project_id` column says which project each row came from
-(MERMAID's own CSVs already use `project` for the project *name*).
+Every method MERMAID publishes is supported at every level. The table lists the
+endpoint each combination reads, relative to `projects/{project_id}/` and
+before the trailing `csv/`; it is what `datamermaid.construct_endpoints()`
+returns, and needs no login to inspect:
 
-The valid methods are `fishbelt`, `benthiclit`, `benthicpit`, `benthicpqt`,
-`habitatcomplexity`, `bleaching`, and `macroinvertebrate`; the valid data
-levels are `observations`, `sampleunits`, and `sampleevents`. Either argument
-also takes a list, or `"all"`. Asking for more than one combination returns a
-nested `{method: {data: DataFrame}}` dict instead of a single frame, keyed in
-the order the methods and levels are listed above however you asked for them:
+| `method` | `observations` | `sampleunits` | `sampleevents` |
+| --- | --- | --- | --- |
+| `fishbelt` | `beltfishes/obstransectbeltfishes` | `beltfishes/sampleunits` | `beltfishes/sampleevents` |
+| `benthiclit` | `benthiclits/obstransectbenthiclits` | `benthiclits/sampleunits` | `benthiclits/sampleevents` |
+| `benthicpit` | `benthicpits/obstransectbenthicpits` | `benthicpits/sampleunits` | `benthicpits/sampleevents` |
+| `benthicpqt` | `benthicpqts/obstransectbenthicpqts` | `benthicpqts/sampleunits` | `benthicpqts/sampleevents` |
+| `habitatcomplexity` | `habitatcomplexities/obshabitatcomplexities` | `habitatcomplexities/sampleunits` | `habitatcomplexities/sampleevents` |
+| `bleaching` | `bleachingqcs/obscoloniesbleacheds` + `bleachingqcs/obsquadratbenthicpercents` | `bleachingqcs/sampleunits` | `bleachingqcs/sampleevents` |
+| `macroinvertebrate` | `beltinverts/obstransectbeltinverts` | `beltinverts/sampleunits` | `beltinverts/sampleevents` |
+
+The valid names are exposed as `datamermaid.METHODS` and
+`datamermaid.DATA_LEVELS`. Either argument also takes a list, or `"all"`.
+Asking for more than one combination returns a nested
+`{method: {data: DataFrame}}` dict instead of a single frame, keyed in the
+order of the table above however you asked for them:
 
 ```python
 fishbelt = datamermaid.get_project_data("00673bec-...", "fishbelt", "all")
@@ -241,24 +288,88 @@ bleaching["percent_cover"]
 ```
 
 That pair takes the place of a frame wherever one would otherwise sit, so it is
-what the `"observations"` entry holds inside the nested dict too. Every other
-method and level is a single frame:
+what the `"observations"` entry holds inside the nested dict too.
 
-| Request | Result |
+`project` takes the same shapes as the other project functions, and the
+default project is used when it is omitted. When more than one project is
+named, the rows are stacked and a leading `project_id` column says which
+project each row came from (MERMAID's own CSVs already use `project` for the
+project *name*). `limit` truncates the rows returned per project (per
+endpoint, so both bleaching observation frames are truncated), and
+`covariates=True` asks MERMAID for its derived site covariates alongside the
+survey data. A project with no data for a method gives an empty frame rather
+than an error. An invalid method or data level raises `ValueError` naming the
+valid options, before any request is made.
+
+## Global data
+
+MERMAID publishes its sites, management regimes, reference tables and summary
+data without a login. Each getter returns a `DataFrame` and takes the same
+`limit` as `get_projects()`:
+
+```python
+sites = datamermaid.get_sites(limit=100)
+managements = datamermaid.get_managements()
+events = datamermaid.get_summary_sampleevents(limit=1000)  # large; sample it
+
+fish_families = datamermaid.get_reference("fishfamilies")
+```
+
+`get_reference()` accepts `"fishfamilies"`, `"fishgenera"`, `"fishspecies"`,
+`"benthicattributes"` or `"fishgroupings"` (`datamermaid.REFERENCE_ENDPOINTS`)
+and raises `ValueError` listing those options for anything else.
+
+`get_choices()` returns MERMAID's controlled vocabularies as a dict of frames,
+one per vocabulary, and `countries()` pulls the country names out of it:
+
+```python
+choices = datamermaid.get_choices()
+choices["reeftypes"]  # DataFrame with id, name, ...
+datamermaid.countries()[:3]  # ['Afghanistan', 'Albania', 'Algeria']
+```
+
+Any other global endpoint can be reached with the generic getter, which passes
+extra keyword arguments through as query parameters. Endpoint names outside
+`datamermaid.KNOWN_ENDPOINTS` are still requested, with a `UserWarning`:
+
+```python
+datamermaid.get_endpoint("fishsizes")
+datamermaid.get_endpoint("sites", country="Fiji", limit=50)
+```
+
+## Return shapes
+
+| Function | Returns |
 | --- | --- |
-| one method, one level | a `DataFrame` |
-| one method, one level, `bleaching`/`observations` | `{"colonies_bleached": df, "percent_cover": df}` |
-| several methods or levels | `{method: {data: <either of the above>}}` |
+| `get_projects`, `search_projects`, `get_my_projects`, `search_my_projects` | `DataFrame`, one row per project |
+| `get_sites`, `get_managements`, `get_reference`, `get_summary_sampleevents`, `get_endpoint` | `DataFrame`, one row per record |
+| `get_project_sites`, `get_project_managements`, `get_project_endpoint` | `DataFrame` with a leading `project` column (the project id) |
+| `get_project_data` — one method, one level | `DataFrame`; with several projects, a leading `project_id` column |
+| `get_project_data` — `bleaching`/`observations` | `{"colonies_bleached": DataFrame, "percent_cover": DataFrame}` |
+| `get_project_data` — several methods or levels | `{method: {data: <either of the above>}}` |
+| `get_me` | `dict` — `me/` answers with a single object |
+| `get_choices` | `dict[str, DataFrame]`, one frame per vocabulary |
+| `countries` | `list[str]` |
+| `get_default_project`, `as_project_ids` | `list[str]` of project ids (`None` when no default is set) |
+| `construct_endpoints` | `{method: {data: [endpoint, ...]}}` |
+| `get_token`, `authenticate` | the bearer token as a `str` (`get_token` gives `None` when there is none) |
+| `import_get_template_and_options` | `(DataFrame, dict)` — the empty template and the field options |
+| `import_check_options`, `import_bulk_*` | `DataFrame` reports, described under [Importing data](#importing-data) |
+| `import_project_data` | `None` on success, otherwise a `DataFrame` of problems |
 
-`limit` truncates the rows returned per project (per endpoint, so both
-bleaching observation frames are truncated), and `covariates=True` asks MERMAID
-for its derived site covariates alongside the survey data. A project with no
-data for a method gives an empty frame rather than an error. An invalid method
-or data level raises `ValueError` naming the valid options, before any request
-is made.
+Frames keep MERMAID's column names. List-valued fields such as `countries` and
+`tags` are collapsed to comma-separated strings, as mermaidr does — a list of
+`{id, name}` objects collapses to its names — so a project in two countries
+shows `"Fiji, Tonga"`.
 
-The endpoint mapping itself is exposed as `datamermaid.construct_endpoints()`,
-which is pure and needs no login.
+## Errors
+
+| Exception | When |
+| --- | --- |
+| `datamermaid.MermaidAPIError` | The API answered with an error status; carries `status_code`, `reason` and `url`. |
+| `datamermaid.AuthenticationError` | No token could be found for an endpoint that needs one (raised before any request), or MERMAID rejected the token. The message says how to sign in. |
+| `datamermaid.MermaidError` | Base class of both, for catching everything the package raises. |
+| `ValueError` | Argument mistakes: an unknown method, data level or reference table, a bad `limit`, a project argument with no id, a project function called with no project and no default, or a bulk action without `confirm=True`. |
 
 ## Importing data
 
@@ -355,13 +466,67 @@ import logging
 logging.basicConfig(level=logging.INFO)
 ```
 
+## Migrating from mermaidr
+
+Drop the `mermaid_` prefix and you usually have the Python name. Arguments are
+singular where mermaidr's are plural (`country=` rather than `countries=`),
+results are `DataFrame`s rather than tibbles, and named lists become dicts.
+Every function mermaidr exports is listed here.
+
+| mermaidr | datamermaid | Notes |
+| --- | --- | --- |
+| `mermaid_auth()` | `datamermaid.authenticate()` | Same `new_user=`. Adds `use_device_code=` for headless machines and the `MERMAID_API_TOKEN` environment variable. Returns the token. |
+| `mermaid_token()` | `datamermaid.get_token()` | Never prompts; returns `None` when there is no token. `clear_cached_token()` discards the cache. |
+| `mermaid_get_me()` | `datamermaid.get_me()` | Returns a `dict`, not a one-row tibble. |
+| `mermaid_get_projects()` | `datamermaid.get_projects()` | Same `limit=` and `include_test_projects=`. |
+| `mermaid_search_projects()` | `datamermaid.search_projects()` | `name=`, `country=`, `tag=` (singular). Filters client-side, like mermaidr. |
+| `mermaid_get_my_projects()` | `datamermaid.get_my_projects()` | Adds `token=` and `client=`, as does every function that needs a login. |
+| `mermaid_search_my_projects()` | `datamermaid.search_my_projects()` | As `search_projects()`. |
+| `mermaid_set_default_project()` | `datamermaid.set_default_project()` | Also exports `MERMAID_DEFAULT_PROJECT`; pass `None` to clear. |
+| `mermaid_get_default_project()` | `datamermaid.get_default_project()` | Always a `list`, or `None` when unset. |
+| `mermaid_get_project_endpoint()` | `datamermaid.get_project_endpoint()` | Extra keyword arguments become query parameters; `columns=` selects columns. |
+| `mermaid_get_project_sites()` | `datamermaid.get_project_sites()` | Leading `project` column holds the project *id*. |
+| `mermaid_get_project_managements()` | `datamermaid.get_project_managements()` | As above. |
+| `mermaid_get_project_data()` | `datamermaid.get_project_data()` | Same `method=`, `data=`, `limit=`, `covariates=`. Several methods or levels give a nested `dict` rather than a named list; stacked projects carry `project_id`. |
+| `mermaid_get_endpoint()` | `datamermaid.get_endpoint()` | Extra keyword arguments become query parameters. Unknown endpoints warn rather than error. |
+| `mermaid_get_sites()` | `datamermaid.get_sites()` | |
+| `mermaid_get_managements()` | `datamermaid.get_managements()` | |
+| `mermaid_get_reference()` | `datamermaid.get_reference()` | Same five reference tables (`REFERENCE_ENDPOINTS`). |
+| `mermaid_get_summary_sampleevents()` | `datamermaid.get_summary_sampleevents()` | |
+| `mermaid_countries()` | `datamermaid.countries()` | A `list[str]`. `get_choices()` (internal in mermaidr) exposes every vocabulary as a `dict` of frames. |
+| `mermaid_import_get_template_and_options()` | `datamermaid.import_get_template_and_options()` | Returns a `(template, options)` tuple rather than one list with a `"Template"` entry. No `save=`; write the template with `template.to_csv()`. |
+| `mermaid_import_check_options()` | `datamermaid.import_check_options()` | Same `data, options, field` arguments; reports as a `DataFrame`. |
+| `mermaid_import_project_data()` | `datamermaid.import_project_data()` | Same `dryrun=True` default. `clearexisting=True` also needs `clearexisting_confirm=True` instead of a console prompt. Returns `None` on success, or a frame of problems. |
+| `mermaid_import_bulk_validate()` | `datamermaid.import_bulk_validate()` | Returns the `status`/`n` counts instead of printing them. |
+| `mermaid_import_bulk_submit()` | `datamermaid.import_bulk_submit()` | `confirm=True` replaces the console prompt. |
+| `mermaid_import_bulk_edit()` | `datamermaid.import_bulk_edit()` | `confirm=True` replaces the console prompt; `method` is required. |
+
+Not ported yet: `mermaid_get_classification_labelmappings()` and
+`mermaid_get_gfcr_report()`. Both endpoints can be reached in the meantime with
+`get_endpoint()` / `get_project_endpoint()`. mermaidr's `%>%` re-export has no
+counterpart; use pandas method chaining.
+
+Python-only additions: `MermaidClient` / `default_client()` /
+`set_default_client()` for connection reuse and testing, `as_project_ids()`,
+`construct_endpoints()`, and the constants `METHODS`, `DATA_LEVELS`,
+`REFERENCE_ENDPOINTS`, `KNOWN_ENDPOINTS`, `METHOD_ENDPOINTS`, `API_BASE_URL`,
+`DEFAULT_PAGE_SIZE`, `TOKEN_ENV_VAR` and `DEFAULT_PROJECT_ENV_VAR`.
+
 ## Development
 
 ```bash
-pytest        # offline; all HTTP is mocked with respx
+pip install -e ".[dev]"
+pytest                    # offline; all HTTP is mocked with respx
 ruff check .
+ruff format --check .
+python examples/quickstart.py
 ```
+
+`tests/test_docs.py` runs the quickstart and checks that this README's
+migration table and `get_project_data()` matrix agree with the package, so
+changes to either need to be made in both places. CI runs the same commands
+on Python 3.10 and 3.12.
 
 ## License
 
-MIT
+MIT, like mermaidr. See [LICENSE](LICENSE).
