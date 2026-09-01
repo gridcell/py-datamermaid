@@ -13,6 +13,7 @@ data → pull reference data**. Public data needs no account.
 - [Install](#install)
 - [Authentication](#authentication)
 - [Quickstart](#quickstart)
+- [Examples](#examples)
 - [Finding projects](#finding-projects)
 - [Project data](#project-data)
   - [`get_project_data()` — methods and data levels](#get_project_data--methods-and-data-levels)
@@ -163,6 +164,22 @@ mocked API, so it can be executed offline:
 ```bash
 python examples/quickstart.py
 ```
+
+## Examples
+
+[`examples/`](examples/README.md) holds a numbered set of small runnable
+scripts, one per capability — public project listing and search, the three
+ways to authenticate, your own projects, project-scoped endpoints, survey
+data, and error handling:
+
+```bash
+python examples/01_public_projects.py   # public data; no account needed
+python examples/03_authenticate.py      # sign in and cache a token
+python examples/07_project_data.py      # survey data, by method and level
+```
+
+[`examples/README.md`](examples/README.md) indexes them and says which need a
+login. Only `quickstart.py` runs offline; the rest talk to the real API.
 
 ## Finding projects
 
@@ -524,8 +541,10 @@ python examples/quickstart.py
 
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so
-changes to either need to be made in both places. CI runs the same commands
-on Python 3.10 and 3.12.
+changes to either need to be made in both places. `tests/test_examples.py`
+parses everything in [`examples/`](examples/README.md) — the scripts there talk
+to the real API, so they are checked for drift rather than executed. CI runs
+the same commands on Python 3.10 and 3.12.
 
 ## License
 

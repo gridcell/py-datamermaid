@@ -98,6 +98,8 @@ src/datamermaid/
   import_.py           write path: template/options, option checks, ingest, bulk actions
 tests/                 pytest + respx; fixtures/ holds trimmed real MERMAID CSVs
 examples/quickstart.py the README walk-through on an httpx.MockTransport (run by tests)
+examples/NN_*.py       numbered, runnable scripts per capability; they hit the real
+                       API, so tests/test_examples.py only parses them (drift guard)
 ```
 
 Request flow: a public function resolves its `client=`/`token=` arguments via
