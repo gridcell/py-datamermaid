@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "py_datamermaid",
+  "project_id": "406fd313-c2d7-4a78-850b-30643e206629"
+}
