@@ -438,6 +438,30 @@ class TestImportProjectData:
         assert fields["file"].replace("\r\n", "\n") == RECORDS_CSV
 
     @respx.mock
+    def test_whole_numbers_beside_a_blank_keep_their_integer_spelling(self, auth_client):
+        route = mock_ingest()
+
+        import_project_data(
+            pd.DataFrame({"Count *": [3, None], "Depth *": [1.5, None]}),
+            PROJECT,
+            client=auth_client,
+        )
+
+        fields = multipart_fields(route.calls.last.request)
+        assert fields["file"].replace("\r\n", "\n") == "Count *,Depth *\n3,1.5\n,\n"
+
+    @respx.mock
+    def test_a_csv_file_is_uploaded_without_reinterpreting_its_values(self, auth_client, tmp_path):
+        path = tmp_path / "records.csv"
+        path.write_text("Site *,Count *\nNA,007\n")
+        route = mock_ingest()
+
+        import_project_data(path, PROJECT, client=auth_client)
+
+        fields = multipart_fields(route.calls.last.request)
+        assert fields["file"].replace("\r\n", "\n") == "Site *,Count *\nNA,007\n"
+
+    @respx.mock
     def test_the_default_project_is_used_when_none_is_given(self, auth_client):
         datamermaid.set_default_project(PROJECT)
         route = mock_ingest()
@@ -676,6 +700,17 @@ class TestBulkValidate:
 
         with pytest.raises(MermaidAPIError):
             import_bulk_validate(PROJECT, client=auth_client)
+
+    @respx.mock
+    def test_a_body_that_is_not_json_counts_as_a_failure(self, auth_client):
+        mock_collectrecords(None)
+        respx.post(collectrecords_url(PROJECT, "validate")).mock(
+            return_value=httpx.Response(200, text="")
+        )
+
+        summary = import_bulk_validate(PROJECT, client=auth_client)
+
+        assert counts(summary) == {"error": 0, "warning": 0, "ok": 0, "not_ok": 1}
 
     def test_no_token_raises_before_any_request(self, client):
         with respx.mock:

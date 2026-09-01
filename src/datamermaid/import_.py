@@ -428,7 +428,13 @@ def _data_as_csv(data: pd.DataFrame | str | Path) -> bytes:
     Missing values are written as empty fields rather than ``NaN``/``NA``, as
     mermaidr's ``na = ""`` does -- MERMAID reads the literal text of each cell,
     so an ``NA`` would be ingested as the string "NA".  A path is re-read and
-    re-written for the same reason.
+    re-written for the same reason, every column as text so that pandas'
+    inference cannot blank out a site named "NA" or turn a code like "007"
+    into 7.
+
+    Frames go through pandas' nullable dtypes first: a column of whole numbers
+    with a gap in it is otherwise float64, and would be uploaded as "3.0"
+    where the user wrote 3.  Genuine floats are left alone.
     """
     if isinstance(data, pd.DataFrame):
         frame = data
@@ -436,7 +442,7 @@ def _data_as_csv(data: pd.DataFrame | str | Path) -> bytes:
         path = Path(data)
         if path.suffix.lower() != ".csv" or not path.is_file():
             raise ValueError("`data` must be a DataFrame or the path to an existing CSV file.")
-        frame = pd.read_csv(path)
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
     else:
         raise ValueError(
             "`data` must be a DataFrame or the path to an existing CSV file, "
@@ -444,7 +450,7 @@ def _data_as_csv(data: pd.DataFrame | str | Path) -> bytes:
         )
 
     buffer = io.StringIO()
-    frame.to_csv(buffer, index=False, na_rep="")
+    frame.convert_dtypes().to_csv(buffer, index=False, na_rep="")
     return buffer.getvalue().encode("utf-8")
 
 
@@ -665,31 +671,28 @@ def _handle_ingest_error(response: httpx.Response, project_id: str) -> pd.DataFr
 
 
 def _collecting_records(api: MermaidClient, project_id: str) -> pd.DataFrame:
-    """Return the project's records in Collecting: id, validation status, protocol.
+    """Return the project's records in Collecting: id and validation status.
 
-    ``validations`` and ``data`` come back as nested objects, so the two fields
-    that matter are lifted out here rather than left as dict-valued cells.  A
-    record that has never been validated has no ``validations`` at all, and so
-    a missing status.
+    ``validations`` comes back as a nested object, so the status is lifted out
+    here rather than left as a dict-valued cell.  A record that has never been
+    validated has no ``validations`` at all, and so a missing status.  As in
+    mermaidr the bulk actions cover every protocol at once, so the record's
+    own protocol is not carried along.
     """
     records = api.get(f"projects/{project_id}/collectrecords", require_auth=True)
 
     rows = []
     for record in records:
         validations = record.get("validations")
-        payload = record.get("data")
         rows.append(
             {
                 "id": record.get("id"),
                 "validations_status": (
                     validations.get("status") if isinstance(validations, Mapping) else None
                 ),
-                "data_protocol": (
-                    payload.get("protocol") if isinstance(payload, Mapping) else None
-                ),
             }
         )
-    return pd.DataFrame(rows, columns=["id", "validations_status", "data_protocol"])
+    return pd.DataFrame(rows, columns=["id", "validations_status"])
 
 
 def _batches(ids: Sequence[str], size: int) -> Iterator[list[str]]:
@@ -738,7 +741,9 @@ def _post_ids(
 
     A failed *validation* request is an error worth surfacing.  A failed
     *submit* is simply a record that did not get submitted, so it is counted as
-    such rather than raised -- the remaining records still get their turn.
+    such rather than raised -- the remaining records still get their turn.  A
+    body that is not JSON says nothing about the records either way, so it
+    counts the same as a failure rather than surfacing as a parse error.
     """
     response = api.post(
         f"projects/{project_id}/collectrecords/{action}",
@@ -749,7 +754,11 @@ def _post_ids(
     if response.is_error:
         return ["not_ok"] * len(ids)
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError:
+        return ["not_ok"] * len(ids)
+
     statuses = []
     for value in _iter_status_values(payload, ids):
         if action == "submit":
