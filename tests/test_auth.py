@@ -389,16 +389,25 @@ def test_callback_server_records_the_redirect_query():
 
 def _request_in_background(server, url: str) -> httpx.Response:
     """Fire one request at ``server`` while it handles exactly one connection."""
-    captured: list[httpx.Response] = []
+    captured: list[httpx.Response | Exception] = []
 
     def call():
-        captured.append(httpx.get(url, timeout=10))
+        try:
+            captured.append(httpx.get(url, timeout=10))
+        except Exception as exc:  # noqa: BLE001 - reported below instead of hanging
+            captured.append(exc)
 
     thread = threading.Thread(target=call)
     thread.start()
+    # Bound the wait: if the request never arrives, fail rather than block.
+    server.timeout = 10
     server.handle_request()
     thread.join(timeout=10)
-    return captured[0]
+    assert captured, "the request never reached the callback server"
+    result = captured[0]
+    if isinstance(result, Exception):
+        raise AssertionError(f"the request to {url} failed") from result
+    return result
 
 
 def test_callback_server_falls_back_to_an_ephemeral_port():
@@ -620,7 +629,8 @@ def test_callback_server_is_reachable_over_ipv6_localhost(monkeypatch):
 
     try:
         assert server.socket.family == socket.AF_INET6
-        url = f"http://localhost:{server.server_port}/?code=the-code&state=st4te"
+        # Addressed literally: on some hosts ``localhost`` resolves only to IPv4.
+        url = f"http://[::1]:{server.server_port}/?code=the-code&state=st4te"
         assert _request_in_background(server, url).status_code == 200
     finally:
         server.server_close()

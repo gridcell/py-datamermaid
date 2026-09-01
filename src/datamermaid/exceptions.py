@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
-__all__ = [
-    "MermaidError",
-    "MermaidAPIError",
-    "AuthenticationError",
-]
+__all__ = ["AuthenticationError", "MermaidAPIError", "MermaidError"]
 
 
 class MermaidError(Exception):
-    """Base class for every error raised by this package."""
+    """Base class for all errors raised by this package."""
 
 
 class MermaidAPIError(MermaidError):
-    """The MERMAID API returned an unsuccessful HTTP response."""
+    """Raised when the MERMAID API returns an unsuccessful HTTP response.
 
-    def __init__(self, message: str, *, status_code: int | None = None, url: str | None = None):
-        super().__init__(message)
+    Mirrors ``check_errors`` in mermaidr, which surfaces the status code and
+    the reason phrase of the failed request.
+    """
+
+    def __init__(self, status_code: int, reason: str = "", url: str | None = None) -> None:
         self.status_code = status_code
+        self.reason = reason
         self.url = url
+
+        message = f"MERMAID API request failed: ({status_code}) {reason}".rstrip()
+        if url:
+            message = f"{message} [{url}]"
+        super().__init__(message)
 
 
 class AuthenticationError(MermaidError):

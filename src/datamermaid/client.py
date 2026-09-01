@@ -1,9 +1,19 @@
-"""HTTP client for the MERMAID API."""
+"""HTTP core for the MERMAID API.
+
+:class:`MermaidClient` wraps an :class:`httpx.Client` and knows how to walk the
+API's ``{count, next, previous, results}`` pagination envelope.  Endpoint
+modules (see :mod:`datamermaid.projects`) stay thin: they pick a path, supply
+query parameters, and hand the resulting records to
+:func:`datamermaid.utils.records_to_df`.
+"""
 
 from __future__ import annotations
 
 import contextlib
+import numbers
+import threading
 from collections.abc import Iterator
+from types import TracebackType
 from typing import Any
 from urllib.parse import urljoin
 
@@ -12,64 +22,96 @@ import httpx
 from . import auth
 from .exceptions import AuthenticationError, MermaidAPIError
 
-__all__ = ["MermaidClient", "client_context", "DEFAULT_BASE_URL"]
+__all__ = [
+    "API_BASE_URL",
+    "DEFAULT_PAGE_SIZE",
+    "USER_AGENT",
+    "MermaidClient",
+    "check_limit",
+    "client_context",
+    "default_client",
+    "set_default_client",
+]
 
-DEFAULT_BASE_URL = "https://api.datamermaid.org/v1/"
-DEFAULT_TIMEOUT = 30.0
-#: Page size requested from the API; the maximum it accepts is larger, but this
-#: keeps individual responses a reasonable size.
-DEFAULT_PAGE_SIZE = 1000
-USER_AGENT = "py-datamermaid"
+API_BASE_URL = "https://api.datamermaid.org/v1/"
+
+#: The API caps ``?limit=`` at 5000 records per page.
+DEFAULT_PAGE_SIZE = 5000
+
+USER_AGENT = "https://github.com/gridcell/py-datamermaid"
+
+DEFAULT_TIMEOUT = 60.0
+
+
+def check_limit(limit: Any) -> int | None:
+    """Validate a user-supplied ``limit``.
+
+    Returns ``None`` (meaning "every record") or a positive :class:`int`.
+    Anything else raises :class:`ValueError` before any HTTP call is made.
+    Mirrors mermaidr's ``check_limit``.
+    """
+    if limit is None:
+        return None
+
+    # bool is a subclass of int, but ``get_projects(limit=True)`` is a mistake.
+    if isinstance(limit, bool) or not isinstance(limit, numbers.Real):
+        raise ValueError("`limit` must be None or a positive integer.")
+
+    value = float(limit)
+    if not value.is_integer() or value <= 0:
+        raise ValueError("`limit` must be None or a positive integer.")
+
+    return int(value)
 
 
 class MermaidClient:
-    """Thin wrapper around :class:`httpx.Client` for the MERMAID API.
+    """A client for the MERMAID API.
 
     Parameters
     ----------
-    base_url:
-        Root of the API, ending in a slash.
     token:
-        Access token to use for authenticated endpoints.  When omitted, the
-        token is resolved lazily through :mod:`datamermaid.auth` (environment
-        variable, then the on-disk cache).
+        Optional bearer token.  When set it is sent as an ``Authorization``
+        header.  When omitted, requests to endpoints that need a login resolve
+        a token lazily through :mod:`datamermaid.auth` (the
+        ``MERMAID_API_TOKEN`` environment variable, then the on-disk cache
+        written by :func:`datamermaid.authenticate`).
+    base_url:
+        API root, including the version segment and a trailing slash.
     timeout:
         Per-request timeout in seconds.
     transport:
-        Optional :mod:`httpx` transport, mainly useful in tests.
+        Optional :class:`httpx.BaseTransport`, mostly useful for testing.
     """
 
     def __init__(
         self,
-        base_url: str = DEFAULT_BASE_URL,
         token: str | None = None,
+        *,
+        base_url: str = API_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self.base_url = base_url if base_url.endswith("/") else base_url + "/"
         self.token = token
-        self._http = httpx.Client(
-            base_url=self.base_url,
+        self.base_url = base_url if base_url.endswith("/") else base_url + "/"
+
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        self._client = httpx.Client(
+            headers=headers,
             timeout=timeout,
-            transport=transport,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            follow_redirects=True,
+            transport=transport if transport is not None else httpx.HTTPTransport(retries=2),
         )
 
-    # -- lifecycle ---------------------------------------------------------- #
+    # -- request plumbing --------------------------------------------------
 
-    def close(self) -> None:
-        self._http.close()
-
-    def __enter__(self) -> MermaidClient:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
-
-    # -- requests ----------------------------------------------------------- #
+    def url_for(self, endpoint: str) -> str:
+        """Return the absolute URL for ``endpoint`` (e.g. ``"projects"``)."""
+        return urljoin(self.base_url, endpoint.strip("/") + "/")
 
     def _resolve_token(self) -> auth.ResolvedToken:
+        """Return the token to send, or explain how to obtain one."""
         resolved = auth.resolve_token(self.token)
         if resolved is None:
             raise AuthenticationError(
@@ -77,39 +119,6 @@ class MermaidClient:
                 f"to sign in, or set the {auth.TOKEN_ENV_VAR} environment variable."
             )
         return resolved
-
-    def get(
-        self,
-        endpoint: str,
-        params: dict[str, Any] | None = None,
-        *,
-        require_auth: bool = False,
-    ) -> Any:
-        """GET ``endpoint`` and return the decoded JSON body."""
-        headers = {}
-        resolved = None
-        if require_auth:
-            resolved = self._resolve_token()
-            headers["Authorization"] = f"Bearer {resolved.access_token}"
-
-        url = endpoint if endpoint.startswith("http") else urljoin(self.base_url, endpoint)
-        response = self._http.get(url, params=params, headers=headers)
-
-        if response.status_code in (401, 403) and resolved is not None:
-            raise self._auth_failure(response, resolved)
-        if response.status_code >= 400:
-            raise MermaidAPIError(
-                f"MERMAID API request to {url} failed with HTTP {response.status_code}: "
-                f"{response.text.strip()[:500]}",
-                status_code=response.status_code,
-                url=url,
-            )
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise MermaidAPIError(
-                f"MERMAID API returned a non-JSON response for {url}", url=url
-            ) from exc
 
     @staticmethod
     def _auth_failure(
@@ -143,69 +152,148 @@ class MermaidClient:
             )
         return AuthenticationError(f"HTTP {response.status_code} from {response.url}. {advice}")
 
-    def iter_records(
+    def _get_json(
         self,
-        endpoint: str,
+        url: str,
         params: dict[str, Any] | None = None,
         *,
-        page_size: int = DEFAULT_PAGE_SIZE,
-        require_auth: bool = False,
-    ) -> Iterator[dict[str, Any]]:
-        """Yield records from ``endpoint`` one at a time, following pagination.
+        resolved: auth.ResolvedToken | None = None,
+    ) -> Any:
+        headers = {"Authorization": f"Bearer {resolved.access_token}"} if resolved else None
+        response = self._client.get(url, params=params, headers=headers)
+        if resolved is not None and response.status_code in (401, 403):
+            raise self._auth_failure(response, resolved)
+        if response.is_error:
+            raise MermaidAPIError(
+                status_code=response.status_code,
+                reason=response.reason_phrase,
+                url=str(response.request.url),
+            )
+        return response.json()
 
-        Pages are only fetched as they are needed, so a caller that filters
-        records itself can stop early instead of downloading everything.
-        """
-        query: dict[str, Any] | None = {"limit": page_size, **(params or {})}
-        url = endpoint
-        seen: set[str] = set()
-        while url and url not in seen:
-            seen.add(url)
-            payload = self.get(url, params=query, require_auth=require_auth)
-            if isinstance(payload, list):
-                yield from payload
-                return
-            if not isinstance(payload, dict):
-                raise MermaidAPIError(f"Unexpected response shape for {url}: {type(payload)!r}")
-            yield from payload.get("results") or []
-            # ``next`` is an absolute URL that already carries the query string.
-            url = payload.get("next") or ""
-            query = None
-
-    def get_records(
+    def get_one(
         self,
         endpoint: str,
+        *,
         params: dict[str, Any] | None = None,
+        require_auth: bool = False,
+    ) -> Any:
+        """Fetch ``endpoint`` as a single object, without paginating.
+
+        A few endpoints (``me/``, for one) answer with a bare object rather
+        than the usual ``{count, next, previous, results}`` envelope.
+        """
+        resolved = self._resolve_token() if require_auth else None
+        return self._get_json(self.url_for(endpoint), params=params, resolved=resolved)
+
+    def get(
+        self,
+        endpoint: str,
         *,
         limit: int | None = None,
+        params: dict[str, Any] | None = None,
         require_auth: bool = False,
     ) -> list[dict[str, Any]]:
-        """GET ``endpoint`` and return every record, following pagination.
+        """Fetch every record from ``endpoint``, following pagination.
 
-        ``limit`` caps the number of records returned and stops paging early.
+        Pages are requested at ``min(limit, 5000)`` records each.  Subsequent
+        pages are fetched from the absolute ``next`` URL the API returns, so
+        offsets never have to be recomputed here.  Paging stops once ``next``
+        is null or ``limit`` records have been collected; the result is then
+        truncated to exactly ``limit``.
+
+        ``require_auth`` resolves an access token before the first request and
+        sends it as a bearer token on every page.
         """
-        page_size = DEFAULT_PAGE_SIZE if limit is None else max(1, min(limit, DEFAULT_PAGE_SIZE))
+        limit = check_limit(limit)
+        resolved = self._resolve_token() if require_auth else None
+
+        query: dict[str, Any] | None = dict(params or {})
+        query["limit"] = DEFAULT_PAGE_SIZE if limit is None else min(limit, DEFAULT_PAGE_SIZE)
+
+        url: str | None = self.url_for(endpoint)
         records: list[dict[str, Any]] = []
-        pages = self.iter_records(endpoint, params, page_size=page_size, require_auth=require_auth)
-        with contextlib.closing(pages):
-            for record in pages:
-                records.append(record)
-                if limit is not None and len(records) >= limit:
-                    break
+
+        while url is not None:
+            payload = self._get_json(url, params=query, resolved=resolved)
+            # ``next`` is absolute and carries its own query string.
+            query = None
+
+            if isinstance(payload, list):
+                records.extend(payload)
+                break
+            if not isinstance(payload, dict) or "results" not in payload:
+                # Not a paginated envelope (e.g. a single object); return as-is.
+                records.append(payload)
+                break
+
+            records.extend(payload["results"] or [])
+
+            if limit is not None and len(records) >= limit:
+                break
+            url = payload.get("next")
+
+        if limit is not None:
+            del records[limit:]
         return records
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        self._client.close()
+
+    def __enter__(self) -> MermaidClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def __repr__(self) -> str:
+        return f"MermaidClient(base_url={self.base_url!r}, authenticated={bool(self.token)})"
+
+
+_default_client: MermaidClient | None = None
+_default_client_lock = threading.Lock()
+
+
+def default_client() -> MermaidClient:
+    """Return the process-wide client used by the module-level functions."""
+    global _default_client
+    with _default_client_lock:
+        if _default_client is None:
+            _default_client = MermaidClient()
+        return _default_client
+
+
+def set_default_client(client: MermaidClient | None) -> None:
+    """Replace the process-wide client; pass ``None`` to reset it."""
+    global _default_client
+    with _default_client_lock:
+        _default_client = client
 
 
 @contextlib.contextmanager
 def client_context(
-    client: MermaidClient | None = None, token: str | None = None
+    client: MermaidClient | None = None,
+    token: str | None = None,
 ) -> Iterator[MermaidClient]:
-    """Yield ``client``, or a temporary one that is closed on exit.
+    """Yield the client an endpoint function should use.
 
-    ``token`` only applies to a client created here; a caller-supplied client
-    keeps whatever token it was built with.
+    A caller-supplied ``client`` is used as it is.  A ``token`` builds a
+    throwaway client that is closed on exit.  With neither, the process-wide
+    client is used; it resolves a token lazily when an endpoint needs one.
     """
     if client is not None:
         yield client
+        return
+    if token is None:
+        yield default_client()
         return
     owned = MermaidClient(token=token)
     try:

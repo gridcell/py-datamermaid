@@ -1,4 +1,4 @@
-"""Tests for :class:`datamermaid.MermaidClient`."""
+"""Tests for the HTTP core: pagination, limits, headers and error mapping."""
 
 from __future__ import annotations
 
@@ -6,213 +6,362 @@ import httpx
 import pytest
 import respx
 
-from datamermaid import auth
-from datamermaid.client import DEFAULT_BASE_URL, MermaidClient
-from datamermaid.exceptions import AuthenticationError, MermaidAPIError
-
-PROJECTS_URL = DEFAULT_BASE_URL + "projects/"
-
-
-def page(results, next_url=None):
-    return {"count": len(results), "next": next_url, "previous": None, "results": results}
-
-
-@respx.mock
-def test_get_does_not_send_authorization_by_default():
-    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
-
-    with MermaidClient() as client:
-        client.get("projects/")
-
-    assert "authorization" not in route.calls.last.request.headers
+from conftest import PROJECTS_URL, page, projects, query_of
+from datamermaid.auth import TOKEN_ENV_VAR
+from datamermaid.client import (
+    API_BASE_URL,
+    DEFAULT_PAGE_SIZE,
+    USER_AGENT,
+    MermaidClient,
+    check_limit,
+    client_context,
+    default_client,
+    set_default_client,
+)
+from datamermaid.exceptions import AuthenticationError, MermaidAPIError, MermaidError
 
 
-@respx.mock
-def test_get_sends_the_bearer_token_when_auth_is_required(monkeypatch):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-    route = respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(200, json={}))
+class TestCheckLimit:
+    def test_none_passes_through(self):
+        assert check_limit(None) is None
 
-    with MermaidClient() as client:
-        client.get("me/", require_auth=True)
+    @pytest.mark.parametrize("value", [1, 5, 5000, 10_000])
+    def test_positive_integers_are_accepted(self, value):
+        assert check_limit(value) == value
 
-    assert route.calls.last.request.headers["authorization"] == "Bearer env-token"
+    def test_integral_floats_are_coerced(self):
+        result = check_limit(5.0)
+        assert result == 5
+        assert isinstance(result, int)
 
-
-@respx.mock
-def test_explicit_token_beats_the_environment(monkeypatch):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-    route = respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(200, json={}))
-
-    with MermaidClient(token="explicit-token") as client:
-        client.get("me/", require_auth=True)
-
-    assert route.calls.last.request.headers["authorization"] == "Bearer explicit-token"
-
-
-def test_missing_token_raises_an_actionable_error():
-    with MermaidClient() as client, pytest.raises(AuthenticationError) as excinfo:
-        client.get("me/", require_auth=True)
-
-    message = str(excinfo.value)
-    assert "datamermaid.authenticate()" in message
-    assert auth.TOKEN_ENV_VAR in message
-
-
-@respx.mock
-def test_401_with_a_cached_token_clears_the_cache(write_cached_token, token_cache_path):
-    write_cached_token("cached-token")
-    respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(401, json={}))
-
-    with MermaidClient() as client, pytest.raises(AuthenticationError) as excinfo:
-        client.get("me/", require_auth=True)
-
-    assert "authenticate()" in str(excinfo.value)
-    assert not token_cache_path.exists()
-
-
-@respx.mock
-def test_403_does_not_discard_a_working_token(write_cached_token, token_cache_path):
-    """A 403 means "not allowed", not "bad token", so the cache survives."""
-    write_cached_token("cached-token")
-    respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(403, json={}))
-
-    with MermaidClient() as client, pytest.raises(AuthenticationError, match="may not have access"):
-        client.get("me/", require_auth=True)
-
-    assert token_cache_path.exists()
-
-
-@respx.mock
-def test_401_with_an_env_token_does_not_touch_the_cache(
-    monkeypatch, write_cached_token, token_cache_path
-):
-    write_cached_token("cached-token")
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-    respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(401, json={}))
-
-    with MermaidClient() as client, pytest.raises(AuthenticationError) as excinfo:
-        client.get("me/", require_auth=True)
-
-    assert auth.TOKEN_ENV_VAR in str(excinfo.value)
-    assert token_cache_path.exists()
-
-
-@respx.mock
-def test_401_with_an_explicit_token_mentions_the_client():
-    respx.get(DEFAULT_BASE_URL + "me/").mock(return_value=httpx.Response(401, json={}))
-
-    with MermaidClient(token="explicit") as client, pytest.raises(AuthenticationError) as excinfo:
-        client.get("me/", require_auth=True)
-
-    assert "MermaidClient" in str(excinfo.value)
-
-
-@respx.mock
-def test_401_on_an_unauthenticated_request_is_an_api_error():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401, text="nope"))
-
-    with MermaidClient() as client, pytest.raises(MermaidAPIError) as excinfo:
-        client.get("projects/")
-
-    assert excinfo.value.status_code == 401
-
-
-@respx.mock
-def test_server_errors_are_reported_with_the_status_and_body():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(500, text="boom"))
-
-    with MermaidClient() as client, pytest.raises(MermaidAPIError) as excinfo:
-        client.get("projects/")
-
-    assert "HTTP 500" in str(excinfo.value)
-    assert "boom" in str(excinfo.value)
-
-
-@respx.mock
-def test_non_json_responses_are_reported():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, text="<html/>"))
-
-    with MermaidClient() as client, pytest.raises(MermaidAPIError, match="non-JSON"):
-        client.get("projects/")
-
-
-@respx.mock
-def test_get_records_follows_pagination():
-    second = PROJECTS_URL + "?page=2"
-    route = respx.get(PROJECTS_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=page([{"id": 1}], next_url=second)),
-            httpx.Response(200, json=page([{"id": 2}])),
-        ]
+    @pytest.mark.parametrize(
+        "value",
+        [0, -1, 2.5, -0.5, "x", "5", True, False, float("inf"), float("nan"), [3]],
     )
+    def test_invalid_values_raise(self, value):
+        with pytest.raises(ValueError, match="positive integer"):
+            check_limit(value)
 
-    with MermaidClient() as client:
-        records = client.get_records("projects/")
+    def test_invalid_limit_raises_before_any_request(self, client):
+        with respx.mock:
+            route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+            with pytest.raises(ValueError):
+                client.get("projects", limit=0)
+            assert not route.called
 
-    assert [record["id"] for record in records] == [1, 2]
-    assert str(route.calls.last.request.url) == second
 
-
-@respx.mock
-def test_get_records_stops_once_the_limit_is_reached():
-    route = respx.get(PROJECTS_URL).mock(
-        return_value=httpx.Response(
-            200, json=page([{"id": 1}, {"id": 2}, {"id": 3}], next_url=PROJECTS_URL + "?page=2")
+class TestPagination:
+    @respx.mock
+    def test_follows_next_until_exhausted(self, client):
+        page_two = PROJECTS_URL + "?limit=5000&offset=2"
+        page_three = PROJECTS_URL + "?limit=5000&offset=4"
+        respx.get(PROJECTS_URL, params={"offset": "2"}).mock(
+            return_value=httpx.Response(
+                200, json=page(projects(2, 2), next_url=page_three, count=5)
+            )
         )
-    )
+        respx.get(PROJECTS_URL, params={"offset": "4"}).mock(
+            return_value=httpx.Response(200, json=page(projects(1, 4), count=5))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(2, 0), next_url=page_two, count=5))
+        )
 
-    with MermaidClient() as client:
-        records = client.get_records("projects/", limit=2)
+        records = client.get("projects")
 
-    assert [record["id"] for record in records] == [1, 2]
-    assert route.call_count == 1
+        assert [r["id"] for r in records] == [f"project-{i}" for i in range(5)]
+
+    @respx.mock
+    def test_stops_at_limit_without_fetching_extra_pages(self, client):
+        page_two = PROJECTS_URL + "?limit=3&offset=3"
+        second = respx.get(PROJECTS_URL, params={"offset": "3"}).mock(
+            return_value=httpx.Response(200, json=page(projects(3, 3), count=9))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(3, 0), next_url=page_two, count=9))
+        )
+
+        records = client.get("projects", limit=3)
+
+        assert len(records) == 3
+        assert not second.called, "should not page past the limit"
+
+    @respx.mock
+    def test_truncates_an_overlong_final_page(self, client):
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(10), count=10))
+        )
+
+        records = client.get("projects", limit=4)
+
+        assert [r["id"] for r in records] == [f"project-{i}" for i in range(4)]
+
+    @respx.mock
+    def test_empty_results(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        assert client.get("projects") == []
+
+    @respx.mock
+    def test_unpaginated_object_response_is_returned_as_one_record(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json={"id": "me"}))
+
+        assert client.get("projects") == [{"id": "me"}]
+
+    @respx.mock
+    def test_bare_list_response_is_returned_as_records(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=[{"id": "a"}]))
+
+        assert client.get("projects") == [{"id": "a"}]
 
 
-@respx.mock
-def test_get_records_accepts_a_bare_list_response():
-    respx.get(DEFAULT_BASE_URL + "things/").mock(return_value=httpx.Response(200, json=[{"id": 1}]))
+class TestPageSize:
+    @respx.mock
+    def test_no_limit_requests_the_maximum_page_size(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1)))
+        )
 
-    with MermaidClient() as client:
-        assert client.get_records("things/") == [{"id": 1}]
+        client.get("projects")
 
+        assert query_of(route.calls.last.request)["limit"] == [str(DEFAULT_PAGE_SIZE)]
 
-@respx.mock
-def test_get_records_rejects_an_unexpected_shape():
-    respx.get(DEFAULT_BASE_URL + "things/").mock(return_value=httpx.Response(200, json="nope"))
+    @respx.mock
+    def test_small_limit_requests_only_that_many(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(3)))
+        )
 
-    with MermaidClient() as client, pytest.raises(MermaidAPIError, match="Unexpected response"):
-        client.get_records("things/")
+        client.get("projects", limit=3)
 
+        assert query_of(route.calls.last.request)["limit"] == ["3"]
 
-def test_base_url_always_ends_in_a_slash():
-    with MermaidClient(base_url="https://example.org/v1") as client:
-        assert client.base_url == "https://example.org/v1/"
+    @respx.mock
+    def test_page_size_never_exceeds_the_api_cap(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1), count=20_000))
+        )
 
+        client.get("projects", limit=20_000)
 
-@respx.mock
-def test_iter_records_fetches_pages_only_as_they_are_consumed():
-    second = PROJECTS_URL + "?page=2"
-    route = respx.get(PROJECTS_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=page([{"id": 1}], next_url=second)),
-            httpx.Response(200, json=page([{"id": 2}])),
-        ]
-    )
-
-    with MermaidClient() as client:
-        records = client.iter_records("projects/")
-        assert next(records)["id"] == 1
-        assert route.call_count == 1  # the second page has not been asked for yet
-        assert [record["id"] for record in records] == [2]
-
-    assert route.call_count == 2
+        requested = int(query_of(route.calls.last.request)["limit"][0])
+        assert requested == DEFAULT_PAGE_SIZE
 
 
-@respx.mock
-def test_iter_records_asks_for_the_requested_page_size():
-    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+class TestHeaders:
+    @respx.mock
+    def test_user_agent_points_at_this_repo(self, client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
 
-    with MermaidClient() as client:
-        assert list(client.iter_records("projects/", page_size=5)) == []
+        client.get("projects")
 
-    assert route.calls.last.request.url.params["limit"] == "5"
+        assert route.calls.last.request.headers["User-Agent"] == USER_AGENT
+
+    @respx.mock
+    def test_no_authorization_header_without_a_token(self, client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        client.get("projects")
+
+        assert "Authorization" not in route.calls.last.request.headers
+
+    @respx.mock
+    def test_bearer_token_is_sent_when_set(self, auth_client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        auth_client.get("projects")
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer secret-token"
+
+    @respx.mock
+    def test_headers_are_applied_to_followed_next_pages(self, auth_client):
+        page_two = PROJECTS_URL + "?limit=5000&offset=1"
+        second = respx.get(PROJECTS_URL, params={"offset": "1"}).mock(
+            return_value=httpx.Response(200, json=page(projects(1, 1), count=2))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1), next_url=page_two, count=2))
+        )
+
+        auth_client.get("projects")
+
+        assert second.calls.last.request.headers["Authorization"] == "Bearer secret-token"
+
+
+class TestErrors:
+    @pytest.mark.parametrize("status", [400, 401, 403, 404, 500, 503])
+    @respx.mock
+    def test_http_errors_map_to_mermaid_api_error(self, client, status):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(status))
+
+        with pytest.raises(MermaidAPIError) as excinfo:
+            client.get("projects")
+
+        error = excinfo.value
+        assert error.status_code == status
+        assert str(status) in str(error)
+        assert isinstance(error, MermaidError)
+
+    @respx.mock
+    def test_error_carries_the_requested_url(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(404))
+
+        with pytest.raises(MermaidAPIError) as excinfo:
+            client.get("projects")
+
+        assert "projects" in excinfo.value.url
+
+    @respx.mock
+    def test_error_on_a_later_page_propagates(self, client):
+        page_two = PROJECTS_URL + "?limit=5000&offset=1"
+        respx.get(PROJECTS_URL, params={"offset": "1"}).mock(return_value=httpx.Response(500))
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1), next_url=page_two, count=2))
+        )
+
+        with pytest.raises(MermaidAPIError) as excinfo:
+            client.get("projects")
+
+        assert excinfo.value.status_code == 500
+
+
+class TestClientLifecycle:
+    def test_url_for_builds_a_versioned_path(self, client):
+        assert client.url_for("projects") == "https://api.datamermaid.org/v1/projects/"
+        assert client.url_for("/projects/") == "https://api.datamermaid.org/v1/projects/"
+
+    def test_base_url_gains_a_trailing_slash(self):
+        with MermaidClient(base_url="https://example.test/v1") as c:
+            assert c.base_url == "https://example.test/v1/"
+
+    def test_context_manager_closes_the_pool(self):
+        with MermaidClient() as c:
+            pass
+        assert c._client.is_closed
+
+    def test_repr_does_not_leak_the_token(self):
+        with MermaidClient(token="secret-token") as c:
+            assert "secret-token" not in repr(c)
+            assert "authenticated=True" in repr(c)
+
+    def test_default_client_is_reused(self):
+        set_default_client(None)
+        try:
+            assert default_client() is default_client()
+        finally:
+            set_default_client(None)
+
+    def test_default_client_can_be_replaced(self):
+        replacement = MermaidClient(token="t")
+        set_default_client(replacement)
+        try:
+            assert default_client() is replacement
+        finally:
+            set_default_client(None)
+            replacement.close()
+
+
+class TestRequireAuth:
+    """``require_auth`` resolves a token lazily, per request."""
+
+    @respx.mock
+    def test_token_is_resolved_from_the_environment(self, client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        client.get("projects", require_auth=True)
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer env-token"
+
+    @respx.mock
+    def test_an_explicit_token_wins_over_the_environment(self, auth_client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        auth_client.get("projects", require_auth=True)
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer secret-token"
+
+    @respx.mock
+    def test_the_token_is_sent_on_followed_next_pages(self, client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        page_two = PROJECTS_URL + "?limit=5000&offset=1"
+        second = respx.get(PROJECTS_URL, params={"offset": "1"}).mock(
+            return_value=httpx.Response(200, json=page(projects(1, 1), count=2))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1), next_url=page_two, count=2))
+        )
+
+        client.get("projects", require_auth=True)
+
+        assert second.calls.last.request.headers["Authorization"] == "Bearer env-token"
+
+    def test_no_token_raises_before_any_request(self, client):
+        with respx.mock:
+            route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+            with pytest.raises(AuthenticationError, match="authenticate"):
+                client.get("projects", require_auth=True)
+            assert not route.called
+
+    @respx.mock
+    def test_unauthenticated_requests_send_no_token(self, client, monkeypatch):
+        """An endpoint that needs no login must not send one that happens to exist."""
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        client.get("projects")
+
+        assert "Authorization" not in route.calls.last.request.headers
+
+    @respx.mock
+    def test_a_401_on_an_unauthenticated_request_stays_an_api_error(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401))
+
+        with pytest.raises(MermaidAPIError):
+            client.get("projects")
+
+
+class TestGetOne:
+    @respx.mock
+    def test_returns_the_object_unwrapped(self, client):
+        respx.get(API_BASE_URL + "me/").mock(return_value=httpx.Response(200, json={"id": "abc"}))
+
+        assert client.get_one("me") == {"id": "abc"}
+
+    @respx.mock
+    def test_no_pagination_parameters_are_sent(self, client):
+        route = respx.get(API_BASE_URL + "me/").mock(
+            return_value=httpx.Response(200, json={"id": "abc"})
+        )
+
+        client.get_one("me")
+
+        assert query_of(route.calls.last.request) == {}
+
+    @respx.mock
+    def test_errors_map_to_mermaid_api_error(self, client):
+        respx.get(API_BASE_URL + "me/").mock(return_value=httpx.Response(404))
+
+        with pytest.raises(MermaidAPIError):
+            client.get_one("me")
+
+
+class TestClientContext:
+    def test_a_supplied_client_is_yielded_and_left_open(self, client):
+        with client_context(client) as api:
+            assert api is client
+        assert not client._client.is_closed
+
+    def test_a_token_builds_a_client_that_is_closed_on_exit(self):
+        with client_context(token="t") as api:
+            assert api.token == "t"
+        assert api._client.is_closed
+
+    def test_without_arguments_it_yields_the_default_client(self, client):
+        set_default_client(client)
+        try:
+            with client_context() as api:
+                assert api is client
+        finally:
+            set_default_client(None)

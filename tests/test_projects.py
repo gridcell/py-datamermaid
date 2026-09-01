@@ -1,135 +1,257 @@
-"""Tests for the public project endpoints."""
+"""Tests for the public project endpoints and the DataFrame conversion."""
 
 from __future__ import annotations
 
 import httpx
+import pandas as pd
+import pytest
 import respx
 
-from datamermaid import get_projects, search_projects
-from datamermaid.client import DEFAULT_BASE_URL, DEFAULT_PAGE_SIZE
-from datamermaid.projects import _filter_projects, _is_test_project
-
-PROJECTS_URL = DEFAULT_BASE_URL + "projects/"
-
-PROJECTS = [
-    {
-        "id": "1",
-        "name": "Kubulau Reefs",
-        "countries": ["Fiji"],
-        "tags": [{"name": "WCS Fiji"}],
-        "status": 90,
-    },
-    {
-        "id": "2",
-        "name": "Karimunjawa",
-        "countries": ["Indonesia"],
-        "tags": [{"name": "WCS"}],
-        "status": 90,
-    },
-    {"id": "3", "name": "Test project", "countries": ["Fiji"], "tags": [], "status": 80},
-]
+import datamermaid
+from conftest import PROJECTS_URL, page, projects, query_of
+from datamermaid.client import DEFAULT_PAGE_SIZE
+from datamermaid.projects import (
+    PROJECT_COLUMNS,
+    PROJECT_STATUS_OPEN,
+    get_projects,
+    search_projects,
+)
+from datamermaid.utils import collapse_value, records_to_df
 
 
-def page(results, next_url=None):
-    return {"count": len(results), "next": next_url, "previous": None, "results": results}
+class TestRequestShape:
+    @respx.mock
+    def test_showall_is_sent_when_unauthenticated(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1)))
+        )
+
+        get_projects(limit=1, client=client)
+
+        assert query_of(route.calls.last.request)["showall"] == ["true"]
+
+    @respx.mock
+    def test_showall_is_omitted_when_authenticated(self, auth_client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1)))
+        )
+
+        get_projects(limit=1, client=auth_client)
+
+        assert "showall" not in query_of(route.calls.last.request)
+
+    @respx.mock
+    def test_test_projects_are_filtered_out_by_default(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1)))
+        )
+
+        get_projects(limit=1, client=client)
+
+        assert query_of(route.calls.last.request)["status"] == [str(PROJECT_STATUS_OPEN)]
+
+    @respx.mock
+    def test_status_filter_is_dropped_when_including_test_projects(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1)))
+        )
+
+        get_projects(limit=1, include_test_projects=True, client=client)
+
+        assert "status" not in query_of(route.calls.last.request)
+
+    @respx.mock
+    def test_uses_the_default_client_when_none_is_given(self, client):
+        datamermaid.set_default_client(client)
+        try:
+            respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(2))))
+            assert len(datamermaid.get_projects(limit=2)) == 2
+        finally:
+            datamermaid.set_default_client(None)
+
+    def test_invalid_limit_raises(self, client):
+        with pytest.raises(ValueError):
+            get_projects(limit=0, client=client)
 
 
-@respx.mock
-def test_get_projects_asks_for_all_public_projects():
-    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+class TestResult:
+    @respx.mock
+    def test_returns_a_dataframe_of_at_most_limit_rows(self, client):
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(5), count=5))
+        )
 
-    projects = get_projects()
+        df = get_projects(limit=3, client=client)
 
-    request = route.calls.last.request
-    assert request.url.params["showall"] == "true"
-    assert "authorization" not in request.headers
-    assert [project["id"] for project in projects] == ["1", "2"]  # test project dropped
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 3
 
+    @respx.mock
+    def test_includes_the_documented_columns(self, client):
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(2), count=2))
+        )
 
-@respx.mock
-def test_get_projects_can_include_test_projects():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+        df = get_projects(client=client)
 
-    assert len(get_projects(include_test_projects=True)) == 3
+        for column in (
+            "id",
+            "name",
+            "countries",
+            "num_sites",
+            "tags",
+            "notes",
+            "status",
+            "created_on",
+            "updated_on",
+        ):
+            assert column in df.columns
+        assert any(column.startswith("data_policy") for column in df.columns)
 
+    @respx.mock
+    def test_columns_are_ordered_and_unknown_fields_dropped(self, client):
+        record = projects(1)[0] | {"unexpected_field": "noise"}
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([record])))
 
-@respx.mock
-def test_get_projects_limit_is_applied_after_filtering():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+        df = get_projects(client=client)
 
-    assert [project["id"] for project in get_projects(limit=1)] == ["1"]
+        assert "unexpected_field" not in df.columns
+        assert list(df.columns) == [c for c in PROJECT_COLUMNS if c in df.columns]
 
+    @respx.mock
+    def test_list_columns_are_collapsed_to_strings(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(1))))
 
-@respx.mock
-def test_search_projects_matches_name_country_and_tag():
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+        df = get_projects(client=client)
 
-    assert [p["id"] for p in search_projects(name="kubulau")] == ["1"]
-    assert [p["id"] for p in search_projects(country="indonesia")] == ["2"]
-    assert [p["id"] for p in search_projects(tag="WCS")] == ["1", "2"]
-    assert search_projects(name="Kubulau", country="Indonesia") == []
+        assert df.loc[0, "countries"] == "Fiji"
+        assert df.loc[0, "tags"] == "WCS"
 
+    @respx.mock
+    def test_empty_results_give_an_empty_frame_with_columns(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
 
-def test_filters_understand_comma_separated_fields():
-    """Some MERMAID endpoints flatten ``countries``/``tags`` into strings."""
-    flattened = [{"id": "9", "name": "Flat", "countries": "Fiji, Tonga", "tags": "WCS, TNC"}]
+        df = get_projects(client=client)
 
-    assert _filter_projects(flattened, country="tonga") == flattened
-    assert _filter_projects(flattened, tag="TNC") == flattened
-    assert _filter_projects(flattened, country="Palau") == []
+        assert df.empty
+        assert list(df.columns) == list(PROJECT_COLUMNS)
 
+    @respx.mock
+    def test_paginates_transparently_when_no_limit_is_given(self, client):
+        page_two = PROJECTS_URL + "?limit=5000&offset=2"
+        respx.get(PROJECTS_URL, params={"offset": "2"}).mock(
+            return_value=httpx.Response(200, json=page(projects(2, 2), count=4))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(2), next_url=page_two, count=4))
+        )
 
-def test_filters_handle_missing_fields():
-    sparse = [{"id": "9", "name": "Sparse"}]
+        df = get_projects(client=client)
 
-    assert _filter_projects(sparse, name="sparse") == sparse
-    assert _filter_projects(sparse, country="Fiji") == []
-    assert _filter_projects(sparse, tag="WCS") == []
-
-
-def test_test_projects_are_recognised_by_code_or_label():
-    assert _is_test_project({"status": 80})
-    assert _is_test_project({"status": "Test"})
-    assert not _is_test_project({"status": 90})
-    assert not _is_test_project({})
-
-
-def test_filters_stringify_unexpected_field_types():
-    odd = [{"id": "9", "name": "Odd", "tags": 42}]
-
-    assert _filter_projects(odd, tag="42") == odd
-
-
-@respx.mock
-def test_get_projects_lets_the_api_apply_the_limit():
-    route = respx.get(PROJECTS_URL).mock(
-        return_value=httpx.Response(200, json=page(PROJECTS[:1], next_url=PROJECTS_URL + "?p=2"))
-    )
-
-    assert [project["id"] for project in get_projects(limit=1)] == ["1"]
-
-    assert route.calls.last.request.url.params["limit"] == "1"
-    assert route.call_count == 1  # no paging beyond what the limit needs
-
-
-@respx.mock
-def test_get_projects_keeps_paging_until_the_limit_is_filled():
-    """Test projects are dropped locally, so a short page can be all filler."""
-    route = respx.get(PROJECTS_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=page([PROJECTS[2]], next_url=PROJECTS_URL + "?p=2")),
-            httpx.Response(200, json=page([PROJECTS[0]])),
-        ]
-    )
-
-    assert [project["id"] for project in get_projects(limit=1)] == ["1"]
-    assert route.call_count == 2
+        assert len(df) == 4
+        assert list(df["id"]) == [f"project-{i}" for i in range(4)]
 
 
-@respx.mock
-def test_search_projects_fetches_everything_before_limiting():
-    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+class TestCollapseValue:
+    def test_id_name_objects_collapse_to_names(self):
+        value = [{"id": "a", "name": "WCS"}, {"id": "b", "name": "WWF"}]
+        assert collapse_value(value) == "WCS, WWF"
 
-    assert [project["id"] for project in search_projects(tag="WCS", limit=1)] == ["1"]
+    def test_objects_without_a_name_fall_back_to_id(self):
+        assert collapse_value([{"id": "a"}]) == "a"
 
-    assert route.calls.last.request.url.params["limit"] == str(DEFAULT_PAGE_SIZE)
+    def test_scalar_lists_are_joined(self):
+        assert collapse_value(["Fiji", "Tonga"]) == "Fiji, Tonga"
+
+    def test_empty_list_becomes_an_empty_string(self):
+        assert collapse_value([]) == ""
+
+    @pytest.mark.parametrize("value", ["Fiji", 3, None])
+    def test_non_lists_pass_through(self, value):
+        assert collapse_value(value) is value
+
+
+class TestRecordsToDf:
+    def test_missing_requested_columns_are_skipped(self):
+        df = records_to_df([{"id": "a"}], columns=("id", "name"))
+
+        assert list(df.columns) == ["id"]
+
+    def test_no_column_selection_keeps_everything(self):
+        df = records_to_df([{"b": 1, "a": 2}])
+
+        assert set(df.columns) == {"a", "b"}
+
+    def test_index_is_reset_after_pagination(self):
+        df = records_to_df([{"id": "a"}, {"id": "b"}])
+
+        assert list(df.index) == [0, 1]
+
+
+class TestSearchProjects:
+    """``search_projects`` filters here, since the API has no search parameter."""
+
+    named = [
+        {"id": "1", "name": "Kubulau Reefs", "countries": ["Fiji"], "tags": [{"name": "WCS"}]},
+        {"id": "2", "name": "Karimunjawa", "countries": ["Indonesia"], "tags": [{"name": "WWF"}]},
+    ]
+
+    @respx.mock
+    def test_filters_by_name_country_and_tag(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        assert list(search_projects(name="kubulau", client=client)["id"]) == ["1"]
+        assert list(search_projects(country="indonesia", client=client)["id"]) == ["2"]
+        assert list(search_projects(tag="wcs", client=client)["id"]) == ["1"]
+
+    @respx.mock
+    def test_filters_are_combined(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        assert search_projects(name="Kubulau", country="Indonesia", client=client).empty
+
+    @respx.mock
+    def test_no_match_gives_an_empty_frame_with_columns(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        df = search_projects(name="nothing here", client=client)
+
+        assert df.empty
+        assert list(df.columns) == list(PROJECT_COLUMNS)
+
+    @respx.mock
+    def test_limit_applies_after_filtering(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(5))))
+
+        assert len(search_projects(name="Project", limit=2, client=client)) == 2
+
+    @respx.mock
+    def test_full_pages_are_requested_so_no_match_is_missed(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(5)))
+        )
+
+        search_projects(name="Project 4", limit=1, client=client)
+
+        assert query_of(route.calls.last.request)["limit"] == [str(DEFAULT_PAGE_SIZE)]
+
+    @respx.mock
+    def test_request_shape_matches_get_projects(self, client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        search_projects(name="anything", client=client)
+
+        query = query_of(route.calls.last.request)
+        assert query["showall"] == ["true"]
+        assert query["status"] == [str(PROJECT_STATUS_OPEN)]
+        assert "Authorization" not in route.calls.last.request.headers
+
+    @respx.mock
+    def test_without_filters_it_matches_get_projects(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(3))))
+
+        assert list(search_projects(client=client)["id"]) == list(get_projects(client=client)["id"])
+
+    def test_invalid_limit_raises(self, client):
+        with pytest.raises(ValueError):
+            search_projects(name="anything", limit=0, client=client)

@@ -1,4 +1,4 @@
-"""Tests for the authenticated project endpoints."""
+"""Tests for the authenticated project endpoints and the search filters."""
 
 from __future__ import annotations
 
@@ -6,139 +6,156 @@ import httpx
 import pytest
 import respx
 
+from conftest import PROJECTS_URL, page, query_of
 from datamermaid import auth, get_my_projects, search_my_projects
-from datamermaid.client import DEFAULT_BASE_URL
+from datamermaid.client import DEFAULT_PAGE_SIZE
 from datamermaid.exceptions import AuthenticationError
-
-PROJECTS_URL = DEFAULT_BASE_URL + "projects/"
+from datamermaid.projects import PROJECT_STATUS_OPEN
 
 MY_PROJECTS = [
     {
         "id": "1",
         "name": "Kubulau Reefs",
         "countries": ["Fiji"],
-        "tags": [{"name": "WCS Fiji"}, {"name": "Reef Check"}],
-        "status": 90,
+        "tags": [{"id": "a", "name": "WCS Fiji"}, {"id": "b", "name": "Reef Check"}],
+        "status": PROJECT_STATUS_OPEN,
     },
     {
         "id": "2",
         "name": "Karimunjawa Monitoring",
         "countries": ["Indonesia"],
-        "tags": [{"name": "WCS Indonesia"}],
-        "status": 90,
+        "tags": [{"id": "c", "name": "WCS Indonesia"}],
+        "status": PROJECT_STATUS_OPEN,
     },
-    {"id": "3", "name": "Sandbox test", "countries": ["Fiji"], "tags": [], "status": 80},
 ]
-
-
-def page(results, next_url=None):
-    return {"count": len(results), "next": next_url, "previous": None, "results": results}
 
 
 @pytest.fixture
 def projects_route():
+    """The ``projects`` endpoint, answering with one page of MY_PROJECTS."""
     with respx.mock:
         yield respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(MY_PROJECTS)))
 
 
-def test_get_my_projects_sends_the_token_and_omits_showall(monkeypatch, projects_route):
+@pytest.fixture
+def env_token(monkeypatch):
     monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-
-    projects = get_my_projects()
-
-    request = projects_route.calls.last.request
-    assert request.headers["authorization"] == "Bearer env-token"
-    assert "showall" not in request.url.params
-    assert [project["id"] for project in projects] == ["1", "2"]
+    return "env-token"
 
 
-def test_get_my_projects_uses_the_cached_token(write_cached_token, projects_route):
-    write_cached_token("cached-token")
+class TestRequestShape:
+    def test_sends_the_token_and_omits_showall(self, env_token, projects_route):
+        df = get_my_projects()
 
-    get_my_projects()
+        request = projects_route.calls.last.request
+        assert request.headers["Authorization"] == "Bearer env-token"
+        assert "showall" not in query_of(request)
+        assert list(df["id"]) == ["1", "2"]
 
-    assert projects_route.calls.last.request.headers["authorization"] == "Bearer cached-token"
+    def test_uses_the_cached_token(self, write_cached_token, projects_route):
+        write_cached_token("cached-token")
 
-
-def test_get_my_projects_accepts_an_explicit_token(projects_route):
-    get_my_projects(token="explicit-token")
-
-    assert projects_route.calls.last.request.headers["authorization"] == "Bearer explicit-token"
-
-
-def test_get_my_projects_can_include_test_projects(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-
-    assert len(get_my_projects(include_test_projects=True)) == 3
-
-
-def test_get_my_projects_respects_limit(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-
-    assert [project["id"] for project in get_my_projects(limit=1)] == ["1"]
-
-
-def test_get_my_projects_without_a_token_raises():
-    with pytest.raises(AuthenticationError, match="authenticate"):
         get_my_projects()
 
+        assert projects_route.calls.last.request.headers["Authorization"] == "Bearer cached-token"
 
-@respx.mock
-def test_rejected_token_clears_the_cache(write_cached_token, token_cache_path):
-    write_cached_token("cached-token")
-    respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401, json={"detail": "expired"}))
+    def test_accepts_an_explicit_token(self, projects_route):
+        get_my_projects(token="explicit-token")
 
-    with pytest.raises(AuthenticationError) as excinfo:
+        assert projects_route.calls.last.request.headers["Authorization"] == "Bearer explicit-token"
+
+    def test_test_projects_are_filtered_out_by_default(self, env_token, projects_route):
         get_my_projects()
 
-    assert "datamermaid.authenticate()" in str(excinfo.value)
-    assert not token_cache_path.exists()
+        assert query_of(projects_route.calls.last.request)["status"] == [str(PROJECT_STATUS_OPEN)]
+
+    def test_status_filter_is_dropped_when_including_test_projects(self, env_token, projects_route):
+        get_my_projects(include_test_projects=True)
+
+        assert "status" not in query_of(projects_route.calls.last.request)
+
+    def test_the_api_applies_the_limit(self, env_token, projects_route):
+        df = get_my_projects(limit=1)
+
+        assert list(df["id"]) == ["1"]
+        assert query_of(projects_route.calls.last.request)["limit"] == ["1"]
+        assert projects_route.call_count == 1
+
+    def test_a_search_asks_for_full_pages(self, env_token, projects_route):
+        """A filter is applied here, so ``limit`` must not shrink the request."""
+        search_my_projects(name="Kubulau", limit=1)
+
+        assert query_of(projects_route.calls.last.request)["limit"] == [str(DEFAULT_PAGE_SIZE)]
+
+    def test_search_sends_the_token_and_omits_showall(self, env_token, projects_route):
+        search_my_projects(name="Kubulau")
+
+        request = projects_route.calls.last.request
+        assert request.headers["Authorization"] == "Bearer env-token"
+        assert "showall" not in query_of(request)
+
+    def test_without_a_token_raises(self):
+        with pytest.raises(AuthenticationError, match="authenticate"):
+            get_my_projects()
+
+    def test_no_request_is_made_without_a_token(self):
+        with respx.mock:
+            route = respx.get(PROJECTS_URL).mock(
+                return_value=httpx.Response(200, json=page(MY_PROJECTS))
+            )
+            with pytest.raises(AuthenticationError):
+                get_my_projects()
+            assert not route.called
 
 
-def test_search_my_projects_filters_by_name(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
+class TestRejectedToken:
+    @respx.mock
+    def test_a_rejected_cached_token_clears_the_cache(self, write_cached_token, token_cache_path):
+        write_cached_token("cached-token")
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401, json={"detail": "expired"}))
 
-    assert [p["id"] for p in search_my_projects(name="karimunjawa")] == ["2"]
+        with pytest.raises(AuthenticationError) as excinfo:
+            get_my_projects()
 
+        assert "datamermaid.authenticate()" in str(excinfo.value)
+        assert not token_cache_path.exists()
 
-def test_search_my_projects_filters_by_country(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
+    @respx.mock
+    def test_a_rejected_env_token_names_the_variable(self, env_token):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401))
 
-    assert [p["id"] for p in search_my_projects(country="Fiji")] == ["1"]
+        with pytest.raises(AuthenticationError, match=auth.TOKEN_ENV_VAR):
+            get_my_projects()
 
+    @respx.mock
+    def test_a_forbidden_request_keeps_the_cached_token(self, write_cached_token, token_cache_path):
+        """403 means the account lacks access, not that the token is stale."""
+        write_cached_token("cached-token")
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(403))
 
-def test_search_my_projects_filters_by_tag(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
+        with pytest.raises(AuthenticationError, match="may not have access"):
+            get_my_projects()
 
-    assert [p["id"] for p in search_my_projects(tag="reef check")] == ["1"]
-    assert [p["id"] for p in search_my_projects(tag="WCS")] == ["1", "2"]
-
-
-def test_search_my_projects_combines_filters(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-
-    assert search_my_projects(name="Kubulau", country="Indonesia") == []
-    assert [p["id"] for p in search_my_projects(name="Kubulau", tag="WCS")] == ["1"]
-
-
-def test_search_my_projects_sends_the_token(monkeypatch, projects_route):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-
-    search_my_projects(name="Kubulau")
-
-    request = projects_route.calls.last.request
-    assert request.headers["authorization"] == "Bearer env-token"
-    assert "showall" not in request.url.params
+        assert token_cache_path.exists()
 
 
-@respx.mock
-def test_get_my_projects_lets_the_api_apply_the_limit(monkeypatch):
-    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
-    route = respx.get(PROJECTS_URL).mock(
-        return_value=httpx.Response(200, json=page(MY_PROJECTS[:1], next_url=PROJECTS_URL + "?p=2"))
-    )
+class TestSearchFilters:
+    def test_filters_by_name(self, env_token, projects_route):
+        assert list(search_my_projects(name="karimunjawa")["id"]) == ["2"]
 
-    assert [project["id"] for project in get_my_projects(limit=1)] == ["1"]
+    def test_filters_by_country(self, env_token, projects_route):
+        assert list(search_my_projects(country="Fiji")["id"]) == ["1"]
 
-    assert route.calls.last.request.url.params["limit"] == "1"
-    assert route.call_count == 1
+    def test_filters_by_tag(self, env_token, projects_route):
+        assert list(search_my_projects(tag="reef check")["id"]) == ["1"]
+        assert list(search_my_projects(tag="WCS")["id"]) == ["1", "2"]
+
+    def test_combines_filters(self, env_token, projects_route):
+        assert search_my_projects(name="Kubulau", country="Indonesia").empty
+        assert list(search_my_projects(name="Kubulau", tag="WCS")["id"]) == ["1"]
+
+    def test_limit_applies_after_filtering(self, env_token, projects_route):
+        assert list(search_my_projects(tag="WCS", limit=1)["id"]) == ["1"]
+
+    def test_no_filters_returns_everything(self, env_token, projects_route):
+        assert list(search_my_projects()["id"]) == ["1", "2"]
