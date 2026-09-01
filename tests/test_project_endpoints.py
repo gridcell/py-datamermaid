@@ -53,6 +53,17 @@ class TestAsProjectIds:
     def test_a_series_of_ids(self):
         assert as_project_ids(pd.Series(["p1", "p2"])) == ["p1", "p2"]
 
+    def test_a_project_row(self):
+        """Taking a row's `id` beats iterating it, which would read every field."""
+        df = pd.DataFrame({"id": ["p1"], "name": ["Kubulau"]})
+
+        assert as_project_ids(df.iloc[0]) == ["p1"]
+
+    def test_an_id_column(self):
+        df = pd.DataFrame({"id": ["p1", "p2"], "name": ["One", "Two"]})
+
+        assert as_project_ids(df["id"]) == ["p1", "p2"]
+
     def test_the_output_of_get_projects(self, client):
         with respx.mock:
             from conftest import PROJECTS_URL, projects

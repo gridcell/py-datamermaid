@@ -1,0 +1,6 @@
+project,tags,country,site,latitude,longitude,reef_type,reef_zone,reef_exposure,management,sample_date,depth,transect_number,transect_length,observer,fish_family,fish_genus,fish_taxon,size_bin,size,count,biomass_kgha,trophic_group
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,fore reef,exposed,Nasue Tabu,2018-05-14,7.0,1,50,Alice Waqa,Acanthuridae,Acanthurus,Acanthurus nigricauda,5,15.0,3,12.4419,herbivore-detritivore
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,fore reef,exposed,Nasue Tabu,2018-05-14,7.0,1,50,Alice Waqa,Chaetodontidae,Chaetodon,Chaetodon lunula,5,12.5,1,1.9032,omnivore
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,back reef,sheltered,Nasue Tabu,2018-05-14,5.5,2,50,Alice Waqa,Scaridae,Chlorurus,Chlorurus spilurus,10,22.5,6,58.1106,herbivore-macroalgivore
+Kubulau Reefs,WCS Fiji,Fiji,Namena,-17.1122,179.0871,patch,fore reef,exposed,Namena Reserve,2018-05-16,9.0,1,50,Beni Rova,Serranidae,Cephalopholis,Cephalopholis argus,20,27.5,2,21.7654,piscivore
+Kubulau Reefs,WCS Fiji,Fiji,Namena,-17.1122,179.0871,patch,fore reef,exposed,Namena Reserve,2018-05-16,9.0,1,50,Beni Rova,Lutjanidae,Lutjanus,Lutjanus gibbus,20,32.5,4,73.0210,piscivore

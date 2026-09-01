@@ -31,6 +31,7 @@ from .utils import records_to_df
 
 __all__ = [
     "DEFAULT_PROJECT_ENV_VAR",
+    "ProjectLike",
     "MANAGEMENT_COLUMNS",
     "PROJECT_COLUMN",
     "SITE_COLUMNS",
@@ -89,7 +90,7 @@ MANAGEMENT_COLUMNS = (
 )
 
 #: Anything :func:`as_project_ids` accepts.
-ProjectLike = str | Mapping[str, Any] | pd.DataFrame | Iterable[Any]
+ProjectLike = str | Mapping[str, Any] | pd.DataFrame | pd.Series | Iterable[Any]
 
 _ACCEPTED_SHAPES = (
     "a project id, an iterable of ids, a project record (dict with an `id` "
@@ -102,8 +103,9 @@ def as_project_ids(project: ProjectLike) -> list[str]:
     """Coerce ``project`` into a list of project ids.
 
     Accepts an id, an iterable of ids, a mapping with an ``id`` key, a
-    :class:`~pandas.DataFrame` or :class:`~pandas.Series` carrying ids, and any
-    nesting of those.  Duplicates are dropped, keeping first-seen order.
+    :class:`~pandas.DataFrame` of projects, a single project row, a
+    :class:`~pandas.Series` of ids, and any nesting of those.  Duplicates are
+    dropped, keeping first-seen order.
 
     Raises
     ------
@@ -145,6 +147,14 @@ def _collect_ids(project: Any) -> list[str]:
         if "id" not in project:
             raise ValueError("`project` record has no `id` key.")
         return _collect_ids(project["id"])
+
+    if isinstance(project, pd.Series):
+        # A single project row (`df.iloc[0]`) carries an `id` entry, and taking
+        # it is not the same as iterating the row, which would read every other
+        # field as an id too.  Anything else is a column or plain sequence.
+        if "id" in project.index:
+            return _collect_ids(project["id"])
+        return _collect_ids(list(project))
 
     if project is None or isinstance(project, (bytes, bytearray)):
         raise ValueError(f"`project` must be {_ACCEPTED_SHAPES}, not {type(project).__name__}.")

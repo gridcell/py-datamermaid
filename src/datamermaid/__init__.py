@@ -24,6 +24,12 @@ from .client import (
 )
 from .exceptions import AuthenticationError, MermaidAPIError, MermaidError
 from .me import get_me
+from .project_data import (
+    DATA_LEVELS,
+    METHODS,
+    construct_endpoints,
+    get_project_data,
+)
 from .project_endpoints import (
     DEFAULT_PROJECT_ENV_VAR,
     as_project_ids,
@@ -39,8 +45,10 @@ __version__ = "0.1.0"
 
 __all__ = [
     "API_BASE_URL",
+    "DATA_LEVELS",
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_PROJECT_ENV_VAR",
+    "METHODS",
     "TOKEN_ENV_VAR",
     "AuthenticationError",
     "MermaidAPIError",
@@ -50,10 +58,12 @@ __all__ = [
     "as_project_ids",
     "authenticate",
     "clear_cached_token",
+    "construct_endpoints",
     "default_client",
     "get_default_project",
     "get_me",
     "get_my_projects",
+    "get_project_data",
     "get_project_endpoint",
     "get_project_managements",
     "get_project_sites",

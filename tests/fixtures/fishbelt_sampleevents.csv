@@ -1,0 +1,3 @@
+project,tags,country,site,latitude,longitude,reef_type,reef_zone,reef_exposure,management,sample_date,depth_avg,sample_unit_count,biomass_kgha_avg,biomass_kgha_sd,biomass_kgha_trophic_group_avg_herbivore-detritivore,biomass_kgha_trophic_group_avg_piscivore
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,fore reef,exposed,Nasue Tabu,2018-05-14,6.25,2,36.2279,30.9469,35.2763,0.0
+Kubulau Reefs,WCS Fiji,Fiji,Namena,-17.1122,179.0871,patch,fore reef,exposed,Namena Reserve,2018-05-16,9.0,1,94.7864,,0.0,94.7864
