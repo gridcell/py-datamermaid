@@ -8,6 +8,7 @@ touches a developer's real MERMAID credentials.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -90,3 +91,16 @@ def projects(n: int, start: int = 0) -> list[dict[str, Any]]:
         }
         for i in range(start, start + n)
     ]
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+def fixture_csv(name: str) -> str:
+    """Read a checked-in CSV fixture, e.g. ``"fishbelt_observations"``."""
+    return (FIXTURE_DIR / f"{name}.csv").read_text()
+
+
+def project_csv_url(project_id: str, method_slug: str, data_slug: str) -> str:
+    """Build the URL of a project's CSV endpoint for one method and level."""
+    return f"{API_BASE_URL}projects/{project_id}/{method_slug}/{data_slug}/csv/"

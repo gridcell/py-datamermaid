@@ -10,6 +10,7 @@ query parameters, and hand the resulting records to
 from __future__ import annotations
 
 import contextlib
+import io
 import numbers
 import threading
 from collections.abc import Iterator
@@ -18,6 +19,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+import pandas as pd
 
 from . import auth
 from .exceptions import AuthenticationError, MermaidAPIError
@@ -152,15 +154,20 @@ class MermaidClient:
             )
         return AuthenticationError(f"HTTP {response.status_code} from {response.url}. {advice}")
 
-    def _get_json(
+    def _request(
         self,
         url: str,
         params: dict[str, Any] | None = None,
         *,
         resolved: auth.ResolvedToken | None = None,
-    ) -> Any:
-        headers = {"Authorization": f"Bearer {resolved.access_token}"} if resolved else None
-        response = self._client.get(url, params=params, headers=headers)
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """GET ``url``, mapping an unsuccessful response onto this package's errors."""
+        request_headers = dict(headers or {})
+        if resolved is not None:
+            request_headers["Authorization"] = f"Bearer {resolved.access_token}"
+
+        response = self._client.get(url, params=params, headers=request_headers or None)
         if resolved is not None and response.status_code in (401, 403):
             raise self._auth_failure(response, resolved)
         if response.is_error:
@@ -169,7 +176,43 @@ class MermaidClient:
                 reason=response.reason_phrase,
                 url=str(response.request.url),
             )
-        return response.json()
+        return response
+
+    def _get_json(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        *,
+        resolved: auth.ResolvedToken | None = None,
+    ) -> Any:
+        return self._request(url, params=params, resolved=resolved).json()
+
+    def get_csv(
+        self,
+        endpoint: str,
+        *,
+        params: dict[str, Any] | None = None,
+        require_auth: bool = True,
+    ) -> pd.DataFrame:
+        """Fetch ``endpoint`` as CSV and parse it into a :class:`~pandas.DataFrame`.
+
+        MERMAID's per-project data endpoints answer with a CSV document instead
+        of the paginated JSON envelope :meth:`get` walks, so no pagination
+        parameters are sent and the whole body is parsed at once -- mermaidr
+        does the same in ``get_csv_response``.  An empty body yields an empty
+        frame rather than raising.
+        """
+        resolved = self._resolve_token() if require_auth else None
+        response = self._request(
+            self.url_for(endpoint),
+            params=params,
+            resolved=resolved,
+            headers={"Accept": "text/csv"},
+        )
+
+        if not response.text.strip():
+            return pd.DataFrame()
+        return pd.read_csv(io.StringIO(response.text))
 
     def get_one(
         self,

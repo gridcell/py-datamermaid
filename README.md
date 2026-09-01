@@ -120,6 +120,45 @@ with MermaidClient(token="eyJhbGciOi...") as client:
 Authentication problems raise `datamermaid.AuthenticationError`, whose message
 says how to obtain a fresh token.
 
+## Project data
+
+`get_project_data()` returns a project's survey data. A survey `method` and an
+aggregation level (`data`) name a CSV endpoint under the project, which is
+parsed into a `pandas.DataFrame`:
+
+```python
+observations = datamermaid.get_project_data("<project-id>", "fishbelt", "observations")
+sample_events = datamermaid.get_project_data("<project-id>", "fishbelt", "sampleevents")
+```
+
+`project` accepts a project id, a project record, or a frame of projects — so
+the output of `get_projects()` or `search_my_projects()` can be passed straight
+in. When more than one project is named, the rows are stacked and a leading
+`project_id` column says which project each row came from (MERMAID's own CSVs
+already use `project` for the project *name*).
+
+The valid methods are `fishbelt`, `benthiclit`, `benthicpit`, `benthicpqt`,
+`habitatcomplexity`, `bleaching`, and `macroinvertebrate`; the valid data
+levels are `observations`, `sampleunits`, and `sampleevents`. Either argument
+also takes a list, or `"all"`. Asking for more than one combination returns a
+nested `{method: {data: DataFrame}}` dict instead of a single frame:
+
+```python
+fishbelt = datamermaid.get_project_data("<project-id>", "fishbelt", "all")
+fishbelt["fishbelt"]["sampleunits"]
+```
+
+`limit` truncates the rows returned per project, and `covariates=True` asks
+MERMAID for its derived site covariates alongside the survey data. An invalid
+method or data level raises `ValueError` naming the valid options, before any
+request is made.
+
+Only `fishbelt` can be fetched so far; the other methods raise
+`NotImplementedError`. The endpoint mapping is complete for every method and is
+exposed as `datamermaid.construct_endpoints()`.
+
+These endpoints require a login — see [Authentication](#authentication).
+
 ## Development
 
 ```bash
