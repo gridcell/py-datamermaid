@@ -4,10 +4,17 @@ Example
 -------
 >>> import datamermaid
 >>> datamermaid.get_projects(limit=5)  # doctest: +SKIP
+
+Endpoints that need a login read a token from the ``MERMAID_API_TOKEN``
+environment variable or from the cache written by :func:`authenticate`:
+
+>>> datamermaid.authenticate()  # doctest: +SKIP
+>>> datamermaid.get_my_projects()  # doctest: +SKIP
 """
 
 from __future__ import annotations
 
+from .auth import TOKEN_ENV_VAR, authenticate, clear_cached_token, get_token
 from .client import (
     API_BASE_URL,
     DEFAULT_PAGE_SIZE,
@@ -15,19 +22,29 @@ from .client import (
     default_client,
     set_default_client,
 )
-from .exceptions import MermaidAPIError, MermaidError
-from .projects import get_projects
+from .exceptions import AuthenticationError, MermaidAPIError, MermaidError
+from .me import get_me
+from .projects import get_my_projects, get_projects, search_my_projects, search_projects
 
 __version__ = "0.1.0"
 
 __all__ = [
     "API_BASE_URL",
     "DEFAULT_PAGE_SIZE",
+    "TOKEN_ENV_VAR",
+    "AuthenticationError",
     "MermaidAPIError",
     "MermaidClient",
     "MermaidError",
     "__version__",
+    "authenticate",
+    "clear_cached_token",
     "default_client",
+    "get_me",
+    "get_my_projects",
     "get_projects",
+    "get_token",
+    "search_my_projects",
+    "search_projects",
     "set_default_client",
 ]

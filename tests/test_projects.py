@@ -1,4 +1,4 @@
-"""Tests for :func:`datamermaid.get_projects` and the DataFrame conversion."""
+"""Tests for the public project endpoints and the DataFrame conversion."""
 
 from __future__ import annotations
 
@@ -9,7 +9,13 @@ import respx
 
 import datamermaid
 from conftest import PROJECTS_URL, page, projects, query_of
-from datamermaid.projects import PROJECT_COLUMNS, PROJECT_STATUS_OPEN, get_projects
+from datamermaid.client import DEFAULT_PAGE_SIZE
+from datamermaid.projects import (
+    PROJECT_COLUMNS,
+    PROJECT_STATUS_OPEN,
+    get_projects,
+    search_projects,
+)
 from datamermaid.utils import collapse_value, records_to_df
 
 
@@ -180,3 +186,72 @@ class TestRecordsToDf:
         df = records_to_df([{"id": "a"}, {"id": "b"}])
 
         assert list(df.index) == [0, 1]
+
+
+class TestSearchProjects:
+    """``search_projects`` filters here, since the API has no search parameter."""
+
+    named = [
+        {"id": "1", "name": "Kubulau Reefs", "countries": ["Fiji"], "tags": [{"name": "WCS"}]},
+        {"id": "2", "name": "Karimunjawa", "countries": ["Indonesia"], "tags": [{"name": "WWF"}]},
+    ]
+
+    @respx.mock
+    def test_filters_by_name_country_and_tag(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        assert list(search_projects(name="kubulau", client=client)["id"]) == ["1"]
+        assert list(search_projects(country="indonesia", client=client)["id"]) == ["2"]
+        assert list(search_projects(tag="wcs", client=client)["id"]) == ["1"]
+
+    @respx.mock
+    def test_filters_are_combined(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        assert search_projects(name="Kubulau", country="Indonesia", client=client).empty
+
+    @respx.mock
+    def test_no_match_gives_an_empty_frame_with_columns(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(self.named)))
+
+        df = search_projects(name="nothing here", client=client)
+
+        assert df.empty
+        assert list(df.columns) == list(PROJECT_COLUMNS)
+
+    @respx.mock
+    def test_limit_applies_after_filtering(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(5))))
+
+        assert len(search_projects(name="Project", limit=2, client=client)) == 2
+
+    @respx.mock
+    def test_full_pages_are_requested_so_no_match_is_missed(self, client):
+        route = respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(5)))
+        )
+
+        search_projects(name="Project 4", limit=1, client=client)
+
+        assert query_of(route.calls.last.request)["limit"] == [str(DEFAULT_PAGE_SIZE)]
+
+    @respx.mock
+    def test_request_shape_matches_get_projects(self, client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        search_projects(name="anything", client=client)
+
+        query = query_of(route.calls.last.request)
+        assert query["showall"] == ["true"]
+        assert query["status"] == [str(PROJECT_STATUS_OPEN)]
+        assert "Authorization" not in route.calls.last.request.headers
+
+    @respx.mock
+    def test_without_filters_it_matches_get_projects(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(3))))
+
+        assert list(search_projects(client=client)["id"]) == list(get_projects(client=client)["id"])
+
+    def test_invalid_limit_raises(self, client):
+        with pytest.raises(ValueError):
+            search_projects(name="anything", limit=0, client=client)

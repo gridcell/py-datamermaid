@@ -7,15 +7,18 @@ import pytest
 import respx
 
 from conftest import PROJECTS_URL, page, projects, query_of
+from datamermaid.auth import TOKEN_ENV_VAR
 from datamermaid.client import (
+    API_BASE_URL,
     DEFAULT_PAGE_SIZE,
     USER_AGENT,
     MermaidClient,
     check_limit,
+    client_context,
     default_client,
     set_default_client,
 )
-from datamermaid.exceptions import MermaidAPIError, MermaidError
+from datamermaid.exceptions import AuthenticationError, MermaidAPIError, MermaidError
 
 
 class TestCheckLimit:
@@ -256,3 +259,109 @@ class TestClientLifecycle:
         finally:
             set_default_client(None)
             replacement.close()
+
+
+class TestRequireAuth:
+    """``require_auth`` resolves a token lazily, per request."""
+
+    @respx.mock
+    def test_token_is_resolved_from_the_environment(self, client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        client.get("projects", require_auth=True)
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer env-token"
+
+    @respx.mock
+    def test_an_explicit_token_wins_over_the_environment(self, auth_client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        auth_client.get("projects", require_auth=True)
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer secret-token"
+
+    @respx.mock
+    def test_the_token_is_sent_on_followed_next_pages(self, client, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        page_two = PROJECTS_URL + "?limit=5000&offset=1"
+        second = respx.get(PROJECTS_URL, params={"offset": "1"}).mock(
+            return_value=httpx.Response(200, json=page(projects(1, 1), count=2))
+        )
+        respx.get(PROJECTS_URL).mock(
+            return_value=httpx.Response(200, json=page(projects(1), next_url=page_two, count=2))
+        )
+
+        client.get("projects", require_auth=True)
+
+        assert second.calls.last.request.headers["Authorization"] == "Bearer env-token"
+
+    def test_no_token_raises_before_any_request(self, client):
+        with respx.mock:
+            route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+            with pytest.raises(AuthenticationError, match="authenticate"):
+                client.get("projects", require_auth=True)
+            assert not route.called
+
+    @respx.mock
+    def test_unauthenticated_requests_send_no_token(self, client, monkeypatch):
+        """An endpoint that needs no login must not send one that happens to exist."""
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        client.get("projects")
+
+        assert "Authorization" not in route.calls.last.request.headers
+
+    @respx.mock
+    def test_a_401_on_an_unauthenticated_request_stays_an_api_error(self, client):
+        respx.get(PROJECTS_URL).mock(return_value=httpx.Response(401))
+
+        with pytest.raises(MermaidAPIError):
+            client.get("projects")
+
+
+class TestGetOne:
+    @respx.mock
+    def test_returns_the_object_unwrapped(self, client):
+        respx.get(API_BASE_URL + "me/").mock(return_value=httpx.Response(200, json={"id": "abc"}))
+
+        assert client.get_one("me") == {"id": "abc"}
+
+    @respx.mock
+    def test_no_pagination_parameters_are_sent(self, client):
+        route = respx.get(API_BASE_URL + "me/").mock(
+            return_value=httpx.Response(200, json={"id": "abc"})
+        )
+
+        client.get_one("me")
+
+        assert query_of(route.calls.last.request) == {}
+
+    @respx.mock
+    def test_errors_map_to_mermaid_api_error(self, client):
+        respx.get(API_BASE_URL + "me/").mock(return_value=httpx.Response(404))
+
+        with pytest.raises(MermaidAPIError):
+            client.get_one("me")
+
+
+class TestClientContext:
+    def test_a_supplied_client_is_yielded_and_left_open(self, client):
+        with client_context(client) as api:
+            assert api is client
+        assert not client._client.is_closed
+
+    def test_a_token_builds_a_client_that_is_closed_on_exit(self):
+        with client_context(token="t") as api:
+            assert api.token == "t"
+        assert api._client.is_closed
+
+    def test_without_arguments_it_yields_the_default_client(self, client):
+        set_default_client(client)
+        try:
+            with client_context() as api:
+                assert api is client
+        finally:
+            set_default_client(None)

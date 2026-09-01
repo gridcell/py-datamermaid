@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["MermaidError", "MermaidAPIError"]
+__all__ = ["AuthenticationError", "MermaidAPIError", "MermaidError"]
 
 
 class MermaidError(Exception):
@@ -25,3 +25,7 @@ class MermaidAPIError(MermaidError):
         if url:
             message = f"{message} [{url}]"
         super().__init__(message)
+
+
+class AuthenticationError(MermaidError):
+    """No usable access token is available, or the API rejected the one we sent."""
