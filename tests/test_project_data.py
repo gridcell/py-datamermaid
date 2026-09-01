@@ -13,6 +13,7 @@ from datamermaid.exceptions import AuthenticationError, MermaidAPIError
 from datamermaid.project_data import (
     DATA_LEVELS,
     METHODS,
+    OBSERVATION_KEYS,
     PROJECT_COLUMN,
     construct_endpoints,
     get_project_data,
@@ -56,11 +57,84 @@ FISHBELT_SLUGS = {
 }
 
 
+#: One column per fixture, with the value its first row holds, so that a test
+#: can tell the fixtures apart as well as count their rows.
+FIRST_VALUES = {
+    "fishbelt_observations": ("fish_taxon", "Acanthurus nigricauda"),
+    "fishbelt_sampleunits": ("biomass_kgha", 14.3451),
+    "fishbelt_sampleevents": ("site", "Nasue"),
+    "benthiclit_observations": ("benthic_attribute", "Acropora"),
+    "benthiclit_sampleunits": ("percent_cover_benthic_category_Hard coral", 12.8),
+    "benthiclit_sampleevents": ("percent_cover_benthic_category_avg_Hard coral", 15.6),
+    "benthicpit_observations": ("interval", 0.5),
+    "benthicpit_sampleunits": ("percent_cover_benthic_category_Sand", 52.0),
+    "benthicpit_sampleevents": ("percent_cover_benthic_category_avg_Hard coral", 41.0),
+    "benthicpqt_observations": ("num_points", 42),
+    "benthicpqt_sampleunits": ("num_points_per_quadrat", 100),
+    "benthicpqt_sampleevents": ("percent_cover_benthic_category_avg_Sand", 57.0),
+    "habitatcomplexity_observations": ("score", 3),
+    "habitatcomplexity_sampleunits": ("score_avg", 3.5),
+    "habitatcomplexity_sampleevents": ("score_avg_avg", 3.15),
+    "macroinvertebrate_observations": ("benthic_attribute", "Diadema setosum"),
+    "macroinvertebrate_sampleunits": ("density_ha", 500.0),
+    "macroinvertebrate_sampleevents": ("density_ha_avg", 400.0),
+    "bleaching_colonies_bleached": ("count_normal", 12),
+    "bleaching_percent_cover": ("percent_hard", 45),
+    "bleaching_sampleunits": ("percent_bleached", 11.11),
+    "bleaching_sampleevents": ("count_total_avg", 23.0),
+}
+
+
+def endpoint_fixtures(method: str, data: str) -> list[tuple[str, str]]:
+    """``(path, fixture name)`` for every endpoint one method and level covers.
+
+    Bleaching observations span two endpoints, whose fixtures are named after
+    the keys their frames come back under rather than after the level.
+    """
+    pairs = []
+    for path in construct_endpoints(method, data)[method][data]:
+        key = OBSERVATION_KEYS.get(path.rsplit("/", 1)[-1])
+        pairs.append((path, f"{method}_{key or data}"))
+    return pairs
+
+
+def mock_endpoint(method: str, data: str, project: str = PROJECT, *, body: str | None = None):
+    """Mock every CSV endpoint of one method and level; answers with fixtures."""
+    routes = []
+    for path, name in endpoint_fixtures(method, data):
+        method_slug, data_slug = path.split("/")
+        csv = fixture_csv(name) if body is None else body
+        route = respx.get(project_csv_url(project, method_slug, data_slug))
+        routes.append(route.mock(return_value=httpx.Response(200, text=csv)))
+    return routes
+
+
 def mock_fishbelt(data: str, project: str = PROJECT, *, body: str | None = None):
     """Mock one fishbelt CSV endpoint, answering with its fixture by default."""
-    url = project_csv_url(project, "beltfishes", FISHBELT_SLUGS[data])
-    csv = fixture_csv(f"fishbelt_{data}") if body is None else body
-    return respx.get(url).mock(return_value=httpx.Response(200, text=csv))
+    return mock_endpoint("fishbelt", data, project, body=body)[0]
+
+
+def fixture_rows(name: str) -> int:
+    """How many data rows a CSV fixture holds."""
+    return len(fixture_csv(name).strip().splitlines()) - 1
+
+
+def fixture_columns(name: str) -> list[str]:
+    """The column headings of a CSV fixture."""
+    return fixture_csv(name).splitlines()[0].split(",")
+
+
+def assert_matches_fixture(frame: pd.DataFrame, fixture: str) -> None:
+    """Check a frame against the fixture it was parsed from."""
+    assert list(frame.columns) == fixture_columns(fixture)
+    assert len(frame) == fixture_rows(fixture)
+
+    column, expected = FIRST_VALUES[fixture]
+    actual = frame.loc[0, column]
+    if isinstance(expected, float):
+        assert actual == pytest.approx(expected)
+    else:
+        assert actual == expected
 
 
 class TestConstructEndpoints:
@@ -306,6 +380,166 @@ class TestResult:
         assert isinstance(df, pd.DataFrame)
 
 
+class TestEveryMethod:
+    """Every method fetches and parses its own CSV, at every level."""
+
+    @respx.mock
+    @pytest.mark.parametrize(("method", "data"), sorted(EXPECTED_ENDPOINTS))
+    def test_it_fetches_and_parses_its_endpoints(self, auth_client, method, data):
+        routes = mock_endpoint(method, data)
+
+        result = get_project_data(PROJECT, method, data, client=auth_client)
+
+        fixtures = endpoint_fixtures(method, data)
+        expected = [f"/v1/projects/{PROJECT}/{path}/csv/" for path, _ in fixtures]
+        assert [route.calls.last.request.url.path for route in routes] == expected
+        if len(fixtures) == 1:
+            assert isinstance(result, pd.DataFrame)
+            frames = [result]
+        else:
+            assert list(result) == ["colonies_bleached", "percent_cover"]
+            frames = list(result.values())
+        for frame, (_, name) in zip(frames, fixtures, strict=True):
+            assert_matches_fixture(frame, name)
+
+    @respx.mock
+    @pytest.mark.parametrize("method", METHODS)
+    def test_an_empty_body_gives_an_empty_frame(self, auth_client, method):
+        mock_endpoint(method, "observations", body="")
+
+        result = get_project_data(PROJECT, method, "observations", client=auth_client)
+
+        frames = [result] if isinstance(result, pd.DataFrame) else list(result.values())
+        assert frames
+        assert all(isinstance(frame, pd.DataFrame) and frame.empty for frame in frames)
+
+    @respx.mock
+    @pytest.mark.parametrize("method", METHODS)
+    def test_a_header_only_body_keeps_the_columns(self, auth_client, method):
+        mock_endpoint(method, "sampleevents", body="project,site,depth_avg\n")
+
+        df = get_project_data(PROJECT, method, "sampleevents", client=auth_client)
+
+        assert df.empty
+        assert list(df.columns) == ["project", "site", "depth_avg"]
+
+    @respx.mock
+    def test_empty_bodies_stack_without_raising(self, auth_client):
+        mock_endpoint("benthicpit", "observations", PROJECT, body="")
+        mock_endpoint("benthicpit", "observations", OTHER_PROJECT, body="")
+
+        df = get_project_data(
+            [PROJECT, OTHER_PROJECT], "benthicpit", "observations", client=auth_client
+        )
+
+        assert df.empty
+
+
+class TestBleachingObservations:
+    """Bleaching observations span two endpoints and return two named frames."""
+
+    @respx.mock
+    def test_both_endpoints_are_fetched_and_named(self, auth_client):
+        colonies, percents = mock_endpoint("bleaching", "observations")
+
+        result = get_project_data(PROJECT, "bleaching", "observations", client=auth_client)
+
+        assert colonies.called and percents.called
+        assert list(result) == ["colonies_bleached", "percent_cover"]
+        assert_matches_fixture(result["colonies_bleached"], "bleaching_colonies_bleached")
+        assert_matches_fixture(result["percent_cover"], "bleaching_percent_cover")
+
+    @respx.mock
+    def test_the_other_levels_stay_single_frames(self, auth_client):
+        for data in ("sampleunits", "sampleevents"):
+            mock_endpoint("bleaching", data)
+
+        units = get_project_data(PROJECT, "bleaching", "sampleunits", client=auth_client)
+        events = get_project_data(PROJECT, "bleaching", "sampleevents", client=auth_client)
+
+        assert isinstance(units, pd.DataFrame)
+        assert isinstance(events, pd.DataFrame)
+
+    @respx.mock
+    def test_the_pair_sits_inside_the_nested_dict(self, auth_client):
+        for data in DATA_LEVELS:
+            mock_endpoint("bleaching", data)
+
+        result = get_project_data(PROJECT, "bleaching", "all", client=auth_client)
+
+        observations = result["bleaching"]["observations"]
+        assert list(observations) == ["colonies_bleached", "percent_cover"]
+        assert all(isinstance(frame, pd.DataFrame) for frame in observations.values())
+        assert isinstance(result["bleaching"]["sampleunits"], pd.DataFrame)
+
+    @respx.mock
+    def test_limit_applies_to_each_endpoint(self, auth_client):
+        mock_endpoint("bleaching", "observations")
+
+        both = get_project_data(PROJECT, "bleaching", "observations", limit=2, client=auth_client)
+
+        assert [len(frame) for frame in both.values()] == [2, 2]
+
+    @respx.mock
+    def test_both_frames_are_stacked_across_projects(self, auth_client):
+        mock_endpoint("bleaching", "observations", PROJECT)
+        mock_endpoint("bleaching", "observations", OTHER_PROJECT)
+
+        result = get_project_data(
+            [PROJECT, OTHER_PROJECT], "bleaching", "observations", client=auth_client
+        )
+
+        assert list(result) == ["colonies_bleached", "percent_cover"]
+        for frame in result.values():
+            assert frame.columns[0] == PROJECT_COLUMN
+            assert list(frame[PROJECT_COLUMN]) == [PROJECT] * 3 + [OTHER_PROJECT] * 3
+
+
+class TestAllMethodsAndLevels:
+    @respx.mock
+    def test_everything_is_fetched_and_nested_by_method_then_level(self, auth_client):
+        routes = [route for pair in EXPECTED_ENDPOINTS for route in mock_endpoint(*pair)]
+
+        result = get_project_data(PROJECT, "all", "all", client=auth_client)
+
+        assert all(route.called for route in routes)
+        assert list(result) == list(METHODS)
+        for method, levels in result.items():
+            assert list(levels) == list(DATA_LEVELS)
+            for data, value in levels.items():
+                fixtures = endpoint_fixtures(method, data)
+                frames = [value] if isinstance(value, pd.DataFrame) else list(value.values())
+                for frame, (_, name) in zip(frames, fixtures, strict=True):
+                    assert_matches_fixture(frame, name)
+
+    @respx.mock
+    def test_every_method_at_one_level(self, auth_client):
+        for method in METHODS:
+            mock_endpoint(method, "sampleevents")
+
+        result = get_project_data(PROJECT, "all", "sampleevents", client=auth_client)
+
+        assert list(result) == list(METHODS)
+        assert all(list(levels) == ["sampleevents"] for levels in result.values())
+        assert all(isinstance(levels["sampleevents"], pd.DataFrame) for levels in result.values())
+
+    @respx.mock
+    def test_keys_keep_the_canonical_order_whatever_order_was_asked_for(self, auth_client):
+        for method in ("bleaching", "fishbelt"):
+            for data in ("sampleevents", "observations"):
+                mock_endpoint(method, data)
+
+        result = get_project_data(
+            PROJECT,
+            ["bleaching", "fishbelt"],
+            ["sampleevents", "observations"],
+            client=auth_client,
+        )
+
+        assert list(result) == ["fishbelt", "bleaching"]
+        assert all(list(levels) == ["observations", "sampleevents"] for levels in result.values())
+
+
 class TestMultipleProjects:
     @respx.mock
     def test_rows_are_stacked_and_labelled_with_the_project(self, auth_client):
@@ -381,24 +615,6 @@ class TestErrors:
             route = mock_fishbelt("observations")
             with pytest.raises(ValueError, match="cannot contain"):
                 get_project_data("bad/id", client=auth_client)
-            assert not route.called
-
-    @pytest.mark.parametrize(
-        "method",
-        [
-            "benthiclit",
-            "benthicpit",
-            "benthicpqt",
-            "habitatcomplexity",
-            "bleaching",
-            "macroinvertebrate",
-        ],
-    )
-    def test_other_methods_are_not_implemented_yet(self, auth_client, method):
-        with respx.mock:
-            route = mock_fishbelt("observations")
-            with pytest.raises(NotImplementedError, match=method):
-                get_project_data(PROJECT, method, client=auth_client)
             assert not route.called
 
     def test_no_token_raises_before_any_request(self, client):

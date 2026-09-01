@@ -1,0 +1,4 @@
+project,tags,country,site,latitude,longitude,reef_type,reef_zone,reef_exposure,management,sample_date,depth,transect_number,transect_length,interval_size,observers,percent_cover_benthic_category_Hard coral,percent_cover_benthic_category_Sand,percent_cover_benthic_category_Macroalgae
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,fore reef,exposed,Nasue Tabu,2018-05-14,7.0,1,50,0.5,Alice Waqa,44.0,52.0,4.0
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,back reef,sheltered,Nasue Tabu,2018-05-14,5.5,2,50,0.5,Alice Waqa,38.0,58.0,4.0
+Kubulau Reefs,WCS Fiji,Fiji,Namena,-17.1122,179.0871,patch,fore reef,exposed,Namena Reserve,2018-05-16,9.0,1,50,0.5,Beni Rova,61.0,39.0,0.0
