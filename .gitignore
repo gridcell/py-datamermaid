@@ -4,3 +4,15 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
