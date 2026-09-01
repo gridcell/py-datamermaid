@@ -28,4 +28,9 @@ class MermaidAPIError(MermaidError):
 
 
 class AuthenticationError(MermaidError):
-    """No usable access token is available, or the API rejected the one we sent."""
+    """No usable access token is available, or the API rejected the one we sent.
+
+    When a token cannot be found at all, this is raised before any HTTP
+    request is made, mirroring mermaidr's refusal to call an authenticated
+    endpoint without credentials.
+    """

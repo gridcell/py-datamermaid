@@ -30,6 +30,15 @@ from .project_data import (
     construct_endpoints,
     get_project_data,
 )
+from .project_endpoints import (
+    DEFAULT_PROJECT_ENV_VAR,
+    as_project_ids,
+    get_default_project,
+    get_project_endpoint,
+    get_project_managements,
+    get_project_sites,
+    set_default_project,
+)
 from .projects import get_my_projects, get_projects, search_my_projects, search_projects
 
 __version__ = "0.1.0"
@@ -38,6 +47,7 @@ __all__ = [
     "API_BASE_URL",
     "DATA_LEVELS",
     "DEFAULT_PAGE_SIZE",
+    "DEFAULT_PROJECT_ENV_VAR",
     "METHODS",
     "TOKEN_ENV_VAR",
     "AuthenticationError",
@@ -45,16 +55,22 @@ __all__ = [
     "MermaidClient",
     "MermaidError",
     "__version__",
+    "as_project_ids",
     "authenticate",
     "clear_cached_token",
     "construct_endpoints",
     "default_client",
+    "get_default_project",
     "get_me",
     "get_my_projects",
     "get_project_data",
+    "get_project_endpoint",
+    "get_project_managements",
+    "get_project_sites",
     "get_projects",
     "get_token",
     "search_my_projects",
     "search_projects",
     "set_default_client",
+    "set_default_project",
 ]

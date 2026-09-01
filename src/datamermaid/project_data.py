@@ -12,22 +12,26 @@ parses each response with :func:`pandas.read_csv`.
 
 Only ``fishbelt`` is wired up at the fetch layer for now; the other methods
 raise :class:`NotImplementedError` once their endpoints have been resolved.
+
+Projects are named the same way as for the other project endpoints -- see
+:mod:`datamermaid.project_endpoints`, which owns the coercion and the default
+project.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Any, Union
+from collections.abc import Iterable
+from typing import Any
 
 import pandas as pd
 
 from .client import MermaidClient, check_limit, client_context
+from .project_endpoints import ProjectLike, _resolve_project
 
 __all__ = [
     "DATA_LEVELS",
     "METHODS",
     "PROJECT_COLUMN",
-    "as_project_ids",
     "construct_endpoints",
     "get_project_data",
 ]
@@ -72,11 +76,6 @@ SUPPORTED_METHODS: frozenset[str] = frozenset({"fishbelt"})
 #: MERMAID's own CSVs already carry a ``project`` column holding the project
 #: *name*, so the identifier gets its own column rather than colliding with it.
 PROJECT_COLUMN = "project_id"
-
-#: Anything that can name one or more projects: an id, a project record, a
-#: frame or series of them (as returned by :func:`~datamermaid.get_projects`),
-#: or an iterable mixing those.
-ProjectLike = Union[str, Mapping[str, Any], pd.DataFrame, "pd.Series", Iterable[Any]]
 
 
 def _choices(valid: Iterable[str]) -> str:
@@ -172,52 +171,6 @@ def construct_endpoints(
     return endpoints
 
 
-def _ids_from(value: Any) -> list[str]:
-    """Pull project ids out of one ``project`` argument element."""
-    if isinstance(value, str):
-        project_id = value.strip()
-        if not project_id:
-            raise ValueError("`project` must be a non-empty project id.")
-        return [project_id]
-
-    if isinstance(value, pd.DataFrame):
-        if "id" not in value.columns:
-            raise ValueError("`project` data frame must have an `id` column.")
-        return [str(item) for item in value["id"]]
-
-    if isinstance(value, pd.Series):
-        # A single project row carries an ``id`` entry; anything else is a
-        # column (or plain sequence) of ids.
-        if "id" in value.index:
-            return _ids_from(value["id"])
-        return [item for entry in value for item in _ids_from(entry)]
-
-    if isinstance(value, Mapping):
-        if "id" not in value:
-            raise ValueError("`project` mapping must have an `id` key.")
-        return _ids_from(value["id"])
-
-    if isinstance(value, Iterable):
-        return [item for entry in value for item in _ids_from(entry)]
-
-    raise ValueError(f"`project` must be a project id or record, not {type(value).__name__}.")
-
-
-def as_project_ids(project: ProjectLike | None) -> list[str]:
-    """Coerce ``project`` into a list of project ids.
-
-    Accepts an id, a project record (mapping or row), a frame of projects such
-    as :func:`~datamermaid.get_projects` returns, or an iterable of those.
-    """
-    if project is None:
-        raise ValueError("`project` is required: pass a project id, record, or data frame.")
-
-    ids = _ids_from(project)
-    if not ids:
-        raise ValueError("`project` did not name any project.")
-    return ids
-
-
 def _concat(frames: list[pd.DataFrame], project_ids: list[str]) -> pd.DataFrame:
     """Stack one frame per project, labelling the rows with the project id."""
     if len(frames) == 1:
@@ -250,9 +203,10 @@ def get_project_data(
     Parameters
     ----------
     project:
-        Project id, project record, or a frame of projects (as returned by
-        :func:`~datamermaid.get_projects`).  Several projects are fetched in
-        turn and stacked, with a leading :data:`PROJECT_COLUMN` column naming
+        Project(s) to query, in any shape :func:`datamermaid.as_project_ids`
+        accepts.  ``None`` uses the default project (see
+        :func:`datamermaid.set_default_project`).  Several projects are fetched
+        in turn and stacked, with a leading :data:`PROJECT_COLUMN` column naming
         the project each row came from.
     method:
         Survey method: one of :data:`METHODS`, ``"all"``, or a list of those.
@@ -283,8 +237,8 @@ def get_project_data(
     Raises
     ------
     ValueError
-        If ``method``, ``data``, ``limit``, or ``project`` is invalid.  Nothing
-        is requested in that case.
+        If ``method``, ``data``, or ``limit`` is invalid, or if no project was
+        given and no default is set.  Nothing is requested in that case.
     NotImplementedError
         If a method other than ``"fishbelt"`` is requested.
 
@@ -297,7 +251,7 @@ def get_project_data(
     """
     limit = check_limit(limit)
     endpoints = construct_endpoints(method, data)
-    project_ids = as_project_ids(project)
+    project_ids = _resolve_project(project)
 
     unsupported = [name for name in endpoints if name not in SUPPORTED_METHODS]
     if unsupported:

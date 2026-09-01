@@ -14,7 +14,6 @@ from datamermaid.project_data import (
     DATA_LEVELS,
     METHODS,
     PROJECT_COLUMN,
-    as_project_ids,
     construct_endpoints,
     get_project_data,
 )
@@ -139,41 +138,6 @@ class TestConstructEndpoints:
     def test_an_empty_list_raises(self):
         with pytest.raises(ValueError, match="`method`"):
             construct_endpoints([], "observations")
-
-
-class TestAsProjectIds:
-    def test_a_string_is_one_project(self):
-        assert as_project_ids(" abc-123 ") == ["abc-123"]
-
-    def test_a_list_of_strings(self):
-        assert as_project_ids([PROJECT, OTHER_PROJECT]) == [PROJECT, OTHER_PROJECT]
-
-    def test_a_project_record(self):
-        assert as_project_ids({"id": PROJECT, "name": "Kubulau"}) == [PROJECT]
-
-    def test_a_projects_data_frame(self):
-        df = pd.DataFrame({"id": [PROJECT, OTHER_PROJECT], "name": ["a", "b"]})
-
-        assert as_project_ids(df) == [PROJECT, OTHER_PROJECT]
-
-    def test_a_project_row(self):
-        df = pd.DataFrame({"id": [PROJECT], "name": ["Kubulau"]})
-
-        assert as_project_ids(df.iloc[0]) == [PROJECT]
-
-    def test_an_id_column(self):
-        df = pd.DataFrame({"id": [PROJECT, OTHER_PROJECT]})
-
-        assert as_project_ids(df["id"]) == [PROJECT, OTHER_PROJECT]
-
-    @pytest.mark.parametrize("value", [None, "", "   ", [], {"name": "no id"}, 7])
-    def test_invalid_input_raises(self, value):
-        with pytest.raises(ValueError, match="project"):
-            as_project_ids(value)
-
-    def test_a_frame_without_an_id_column_raises(self):
-        with pytest.raises(ValueError, match="`id` column"):
-            as_project_ids(pd.DataFrame({"name": ["Kubulau"]}))
 
 
 class TestRequestShape:
@@ -408,8 +372,15 @@ class TestErrors:
     def test_a_missing_project_raises_before_any_request(self, auth_client):
         with respx.mock:
             route = mock_fishbelt("observations")
-            with pytest.raises(ValueError, match="`project` is required"):
+            with pytest.raises(ValueError, match="no default project set"):
                 get_project_data(client=auth_client)
+            assert not route.called
+
+    def test_an_invalid_project_raises_before_any_request(self, auth_client):
+        with respx.mock:
+            route = mock_fishbelt("observations")
+            with pytest.raises(ValueError, match="cannot contain"):
+                get_project_data("bad/id", client=auth_client)
             assert not route.called
 
     @pytest.mark.parametrize(
@@ -456,3 +427,26 @@ class TestErrors:
 
         with pytest.raises(AuthenticationError):
             get_project_data(PROJECT, client=auth_client)
+
+
+class TestDefaultProject:
+    """The default project is shared with the other project endpoints."""
+
+    @respx.mock
+    def test_it_is_used_when_no_project_is_given(self, auth_client):
+        datamermaid.set_default_project(PROJECT)
+        route = mock_fishbelt("observations")
+
+        df = get_project_data(client=auth_client)
+
+        assert route.called
+        assert not df.empty
+
+    @respx.mock
+    def test_an_explicit_project_wins(self, auth_client):
+        datamermaid.set_default_project(OTHER_PROJECT)
+        route = mock_fishbelt("observations")
+
+        get_project_data(PROJECT, client=auth_client)
+
+        assert route.calls.last.request.url.path.startswith(f"/v1/projects/{PROJECT}/")
