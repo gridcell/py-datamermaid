@@ -15,7 +15,16 @@ from .client import (
     default_client,
     set_default_client,
 )
-from .exceptions import MermaidAPIError, MermaidError
+from .exceptions import AuthenticationError, MermaidAPIError, MermaidError
+from .project_endpoints import (
+    DEFAULT_PROJECT_ENV_VAR,
+    as_project_ids,
+    get_default_project,
+    get_project_endpoint,
+    get_project_managements,
+    get_project_sites,
+    set_default_project,
+)
 from .projects import get_projects
 
 __version__ = "0.1.0"
@@ -23,11 +32,19 @@ __version__ = "0.1.0"
 __all__ = [
     "API_BASE_URL",
     "DEFAULT_PAGE_SIZE",
+    "DEFAULT_PROJECT_ENV_VAR",
+    "AuthenticationError",
     "MermaidAPIError",
     "MermaidClient",
     "MermaidError",
     "__version__",
+    "as_project_ids",
     "default_client",
+    "get_default_project",
+    "get_project_endpoint",
+    "get_project_managements",
+    "get_project_sites",
     "get_projects",
     "set_default_client",
+    "set_default_project",
 ]
