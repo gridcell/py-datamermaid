@@ -9,15 +9,18 @@ query parameters, and hand the resulting records to
 
 from __future__ import annotations
 
+import contextlib
 import numbers
 import threading
+from collections.abc import Iterator
 from types import TracebackType
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
-from .exceptions import MermaidAPIError
+from . import auth
+from .exceptions import AuthenticationError, MermaidAPIError
 
 __all__ = [
     "API_BASE_URL",
@@ -25,6 +28,7 @@ __all__ = [
     "USER_AGENT",
     "MermaidClient",
     "check_limit",
+    "client_context",
     "default_client",
     "set_default_client",
 ]
@@ -67,7 +71,10 @@ class MermaidClient:
     ----------
     token:
         Optional bearer token.  When set it is sent as an ``Authorization``
-        header.  Acquiring a token is out of scope for this client.
+        header.  When omitted, requests to endpoints that need a login resolve
+        a token lazily through :mod:`datamermaid.auth` (the
+        ``MERMAID_API_TOKEN`` environment variable, then the on-disk cache
+        written by :func:`datamermaid.authenticate`).
     base_url:
         API root, including the version segment and a trailing slash.
     timeout:
@@ -103,8 +110,59 @@ class MermaidClient:
         """Return the absolute URL for ``endpoint`` (e.g. ``"projects"``)."""
         return urljoin(self.base_url, endpoint.strip("/") + "/")
 
-    def _get_json(self, url: str, params: dict[str, Any] | None = None) -> Any:
-        response = self._client.get(url, params=params)
+    def _resolve_token(self) -> auth.ResolvedToken:
+        """Return the token to send, or explain how to obtain one."""
+        resolved = auth.resolve_token(self.token)
+        if resolved is None:
+            raise AuthenticationError(
+                "This endpoint requires a MERMAID login. Call datamermaid.authenticate() "
+                f"to sign in, or set the {auth.TOKEN_ENV_VAR} environment variable."
+            )
+        return resolved
+
+    @staticmethod
+    def _auth_failure(
+        response: httpx.Response, resolved: auth.ResolvedToken
+    ) -> AuthenticationError:
+        """Build the error for a refused request, invalidating the cache if needed.
+
+        Only 401 means the token itself was refused; a 403 can simply mean the
+        signed-in user lacks access to that record, so the cache is left alone.
+        """
+        if response.status_code != 401:
+            return AuthenticationError(
+                f"HTTP {response.status_code} from {response.url}. The MERMAID API accepted "
+                "your login but refused this request; your account may not have access to it."
+            )
+        if resolved.from_cache:
+            auth.clear_cached_token()
+            advice = (
+                "Your saved MERMAID login has been rejected and was removed. "
+                "Call datamermaid.authenticate() to sign in again."
+            )
+        elif resolved.source == "env":
+            advice = (
+                f"The token in {auth.TOKEN_ENV_VAR} was rejected by the MERMAID API. "
+                "Set a current token, or unset it and call datamermaid.authenticate()."
+            )
+        else:
+            advice = (
+                "The token passed to MermaidClient was rejected by the MERMAID API. "
+                "Call datamermaid.authenticate() to obtain a current one."
+            )
+        return AuthenticationError(f"HTTP {response.status_code} from {response.url}. {advice}")
+
+    def _get_json(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        *,
+        resolved: auth.ResolvedToken | None = None,
+    ) -> Any:
+        headers = {"Authorization": f"Bearer {resolved.access_token}"} if resolved else None
+        response = self._client.get(url, params=params, headers=headers)
+        if resolved is not None and response.status_code in (401, 403):
+            raise self._auth_failure(response, resolved)
         if response.is_error:
             raise MermaidAPIError(
                 status_code=response.status_code,
@@ -113,12 +171,28 @@ class MermaidClient:
             )
         return response.json()
 
+    def get_one(
+        self,
+        endpoint: str,
+        *,
+        params: dict[str, Any] | None = None,
+        require_auth: bool = False,
+    ) -> Any:
+        """Fetch ``endpoint`` as a single object, without paginating.
+
+        A few endpoints (``me/``, for one) answer with a bare object rather
+        than the usual ``{count, next, previous, results}`` envelope.
+        """
+        resolved = self._resolve_token() if require_auth else None
+        return self._get_json(self.url_for(endpoint), params=params, resolved=resolved)
+
     def get(
         self,
         endpoint: str,
         *,
         limit: int | None = None,
         params: dict[str, Any] | None = None,
+        require_auth: bool = False,
     ) -> list[dict[str, Any]]:
         """Fetch every record from ``endpoint``, following pagination.
 
@@ -127,8 +201,12 @@ class MermaidClient:
         offsets never have to be recomputed here.  Paging stops once ``next``
         is null or ``limit`` records have been collected; the result is then
         truncated to exactly ``limit``.
+
+        ``require_auth`` resolves an access token before the first request and
+        sends it as a bearer token on every page.
         """
         limit = check_limit(limit)
+        resolved = self._resolve_token() if require_auth else None
 
         query: dict[str, Any] | None = dict(params or {})
         query["limit"] = DEFAULT_PAGE_SIZE if limit is None else min(limit, DEFAULT_PAGE_SIZE)
@@ -137,7 +215,7 @@ class MermaidClient:
         records: list[dict[str, Any]] = []
 
         while url is not None:
-            payload = self._get_json(url, params=query)
+            payload = self._get_json(url, params=query, resolved=resolved)
             # ``next`` is absolute and carries its own query string.
             query = None
 
@@ -198,3 +276,27 @@ def set_default_client(client: MermaidClient | None) -> None:
     global _default_client
     with _default_client_lock:
         _default_client = client
+
+
+@contextlib.contextmanager
+def client_context(
+    client: MermaidClient | None = None,
+    token: str | None = None,
+) -> Iterator[MermaidClient]:
+    """Yield the client an endpoint function should use.
+
+    A caller-supplied ``client`` is used as it is.  A ``token`` builds a
+    throwaway client that is closed on exit.  With neither, the process-wide
+    client is used; it resolves a token lazily when an endpoint needs one.
+    """
+    if client is not None:
+        yield client
+        return
+    if token is None:
+        yield default_client()
+        return
+    owned = MermaidClient(token=token)
+    try:
+        yield owned
+    finally:
+        owned.close()

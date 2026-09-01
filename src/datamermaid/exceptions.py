@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["MermaidError", "MermaidAPIError", "AuthenticationError"]
+__all__ = ["AuthenticationError", "MermaidAPIError", "MermaidError"]
 
 
 class MermaidError(Exception):
@@ -28,8 +28,9 @@ class MermaidAPIError(MermaidError):
 
 
 class AuthenticationError(MermaidError):
-    """Raised when an endpoint requires a bearer token and none is available.
+    """No usable access token is available, or the API rejected the one we sent.
 
-    Mirrors mermaidr's refusal to call an authenticated endpoint without
-    credentials.  Raised before any HTTP request is made.
+    When a token cannot be found at all, this is raised before any HTTP
+    request is made, mirroring mermaidr's refusal to call an authenticated
+    endpoint without credentials.
     """

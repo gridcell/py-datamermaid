@@ -11,6 +11,7 @@ import respx
 
 import datamermaid
 from conftest import managements, page, project_url, query_of, sites
+from datamermaid.auth import TOKEN_ENV_VAR
 from datamermaid.exceptions import AuthenticationError, MermaidError
 from datamermaid.project_endpoints import (
     DEFAULT_PROJECT_ENV_VAR,
@@ -283,7 +284,7 @@ class TestRequestShape:
 
 
 class TestAuthentication:
-    def test_an_unauthenticated_client_raises_without_requesting(self, client):
+    def test_no_resolvable_token_raises_without_requesting(self, client):
         with respx.mock:
             route = respx.get(project_url("p1", "sites")).mock(
                 return_value=httpx.Response(200, json=page(sites(1)))
@@ -293,11 +294,60 @@ class TestAuthentication:
             assert not route.called
 
         assert isinstance(excinfo.value, MermaidError)
-        assert "authentication" in str(excinfo.value).lower()
+        message = str(excinfo.value)
+        assert "datamermaid.authenticate()" in message
+        assert TOKEN_ENV_VAR in message
 
     def test_the_generic_getter_also_requires_a_token(self, client):
         with pytest.raises(AuthenticationError):
             get_project_endpoint("p1", "beltfishes/obstransectbeltfishes", client=client)
+
+    @respx.mock
+    def test_the_environment_token_is_used(self, monkeypatch):
+        """A signed-in user needs no `token=`; the client resolves it."""
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(project_url("p1", "sites")).mock(
+            return_value=httpx.Response(200, json=page(sites(1)))
+        )
+
+        assert len(get_project_sites("p1")) == 1
+        assert route.calls.last.request.headers["Authorization"] == "Bearer env-token"
+
+    @respx.mock
+    def test_the_cached_token_is_used(self, write_cached_token):
+        write_cached_token("cached-token")
+        route = respx.get(project_url("p1", "sites")).mock(
+            return_value=httpx.Response(200, json=page(sites(1)))
+        )
+
+        get_project_sites("p1")
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer cached-token"
+
+    @respx.mock
+    def test_a_rejected_cached_token_is_discarded(self, write_cached_token, token_cache_path):
+        write_cached_token("cached-token")
+        respx.get(project_url("p1", "sites")).mock(return_value=httpx.Response(401))
+
+        with pytest.raises(AuthenticationError, match="authenticate"):
+            get_project_sites("p1")
+
+        assert not token_cache_path.exists()
+
+    @respx.mock
+    def test_an_explicit_token_wins_over_the_environment(self, monkeypatch):
+        monkeypatch.setenv(TOKEN_ENV_VAR, "env-token")
+        route = respx.get(project_url("p1", "sites")).mock(
+            return_value=httpx.Response(200, json=page(sites(1)))
+        )
+
+        get_project_sites("p1", token="explicit-token")
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer explicit-token"
+
+    def test_client_and_token_together_are_rejected(self, auth_client):
+        with pytest.raises(ValueError, match="not both"):
+            get_project_sites("p1", client=auth_client, token="t")
 
 
 class TestResult:

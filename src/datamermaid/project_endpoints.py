@@ -1,7 +1,11 @@
 """Project-scoped MERMAID endpoints (``projects/{project_id}/{endpoint}/``).
 
 Every endpoint here is authenticated: the API only returns a project's sites,
-managements and data to members of that project, so a bearer token is required.
+managements and data to members of that project, so a token is required.  It is
+resolved the same way as everywhere else in the package -- an explicit
+``token``, then ``MERMAID_API_TOKEN``, then the cache written by
+:func:`datamermaid.authenticate` -- and :class:`AuthenticationError` is raised
+before any request when none is available.
 
 The functions accept a project in whatever shape the caller happens to have:
 an id, several ids, a single project record, or the
@@ -22,8 +26,7 @@ from typing import Any
 
 import pandas as pd
 
-from .client import MermaidClient, check_limit, default_client
-from .exceptions import AuthenticationError
+from .client import MermaidClient, check_limit, client_context
 from .utils import records_to_df
 
 __all__ = [
@@ -224,23 +227,16 @@ def _resolve_project(project: ProjectLike | None) -> list[str]:
 
 @contextmanager
 def _authenticated_client(client: MermaidClient | None, token: str | None):
-    """Yield the client to use, creating (and closing) one for ``token``.
+    """Yield the client to use for a project request.
 
     Every project id in a call is served by the same client, so one connection
-    pool covers the whole request.
+    pool covers the whole request.  The token itself is resolved per request by
+    :mod:`datamermaid.auth`, so a client built here needs none of its own.
     """
-    if client is not None:
-        if token is not None:
-            raise ValueError("Pass either `client` or `token`, not both.")
-        yield client
-        return
-
-    if token is not None:
-        with MermaidClient(token=token) as owned:
-            yield owned
-        return
-
-    yield default_client()
+    if client is not None and token is not None:
+        raise ValueError("Pass either `client` or `token`, not both.")
+    with client_context(client, token) as api:
+        yield api
 
 
 def get_project_endpoint(
@@ -272,7 +268,9 @@ def get_project_endpoint(
     token:
         Bearer token to build a throwaway authenticated client from, as a
         shorthand for constructing a :class:`~datamermaid.MermaidClient`.
-        Mutually exclusive with ``client``.
+        Mutually exclusive with ``client``.  Omit it to use the token from
+        ``MERMAID_API_TOKEN`` or from the cache written by
+        :func:`datamermaid.authenticate`.
     columns:
         Columns to keep, in order.  ``None`` keeps everything the API returned.
     **filters:
@@ -288,7 +286,7 @@ def get_project_endpoint(
     Raises
     ------
     AuthenticationError
-        If no bearer token is available; no request is made.
+        If no access token can be resolved; no request is made.
     """
     limit = check_limit(limit)
     project_ids = _resolve_project(project)
@@ -298,15 +296,13 @@ def get_project_endpoint(
 
     frames: list[pd.DataFrame] = []
     with _authenticated_client(client, token) as api:
-        if not api.token:
-            raise AuthenticationError(
-                f"`{endpoint}` is a project endpoint and requires authentication. "
-                "Pass `token=`, or set an authenticated client with "
-                "`set_default_client(MermaidClient(token=...))`."
-            )
-
         for project_id in project_ids:
-            records = api.get(f"projects/{project_id}/{endpoint}", limit=limit, params=params)
+            records = api.get(
+                f"projects/{project_id}/{endpoint}",
+                limit=limit,
+                params=params,
+                require_auth=True,
+            )
             frame = records_to_df(records, columns=selected)
             # Records may carry their own `project` field; the id actually
             # requested is the one that identifies the row.
