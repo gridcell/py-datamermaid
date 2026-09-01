@@ -199,6 +199,101 @@ Only `fishbelt` can be fetched so far; the other methods raise
 `NotImplementedError`. The endpoint mapping is complete for every method and is
 exposed as `datamermaid.construct_endpoints()`.
 
+## Importing data
+
+The write path pushes records into MERMAID Collect. It needs a login, and the
+project must be one you can write to.
+
+**Nothing is written unless you say so.** `import_project_data()` dry-runs by
+default: MERMAID checks the records and reports what is wrong with them without
+saving anything. Only `dryrun=False` actually imports. The same goes for the
+rest of the workflow — `clearexisting=True` also needs
+`clearexisting_confirm=True`, and the bulk submit and edit actions need
+`confirm=True`. Nothing prompts, so all of this runs unattended.
+
+### 1. Get the template and the field options
+
+```python
+template, options = datamermaid.import_get_template_and_options("00673bec-...", "fishbelt")
+
+list(template.columns)
+# ['Site *', 'Management *', 'Sample date: Year *', ...]
+
+options["Reef slope"]
+# {'required': False, 'help_text': 'Slope of the reef', 'choices': ['crest', 'flat', 'slope', 'wall']}
+```
+
+`template` is an empty `DataFrame` whose columns are the headings MERMAID
+expects — required ones carry a trailing `*`. `options` maps each of those
+headings to whether it is required, its help text, and the values MERMAID will
+accept. A column with no `choices` accepts any value. (mermaidr returns these as
+one list with the template under a `"Template"` key; keeping them apart means
+`options` is a plain mapping.)
+
+### 2. Check your columns against the options
+
+```python
+datamermaid.import_check_options(my_data, options, "Reef slope")
+#   data_value closest_choice  match
+# 0        wal           wall  False
+# 1      crest          crest   True
+```
+
+One row per distinct value in the column, with the closest allowed value and
+whether it matched (case-insensitively). Values that did not match come first.
+The report is empty when there is nothing to check — the column accepts any
+value, or it is optional and entirely empty.
+
+### 3. Import
+
+```python
+problems = datamermaid.import_project_data(my_data, "00673bec-...", "fishbelt")
+
+if problems is None:
+    datamermaid.import_project_data(my_data, "00673bec-...", "fishbelt", dryrun=False)
+```
+
+`data` is a `DataFrame` or the path to a CSV file; missing values are uploaded
+as empty fields. The return value is `None` when MERMAID accepted the records,
+and a `DataFrame` of the per-row problems it found when it did not — with a
+leading `row_number` counting the rows of your data from 1. An outright failure
+(a missing column, an unknown project, one you cannot write to) raises
+`MermaidAPIError`.
+
+`clearexisting=True` deletes every existing record for that method in the
+project first. It cannot be combined with a dry run, and it needs
+`clearexisting_confirm=True` as well.
+
+### 4. Validate, submit, and edit in bulk
+
+```python
+datamermaid.import_bulk_validate("00673bec-...")
+#      status  n
+# 0     error  2
+# 1   warning  1
+# 2        ok  3
+
+datamermaid.import_bulk_submit("00673bec-...", confirm=True)
+datamermaid.import_bulk_edit("00673bec-...", "fishbelt", confirm=True)
+```
+
+Each returns a `status`/`n` summary, including the statuses that did not occur.
+`import_bulk_validate()` asks MERMAID to check every record on the Collecting
+page and needs no confirmation, since it neither creates nor moves anything.
+`import_bulk_submit()` submits only the records that validated without errors
+*or* warnings; `import_bulk_edit()` moves every submitted record for one method
+back to Collecting. Both act on the whole project at once, so both require
+`confirm=True`.
+
+Progress is reported through the `datamermaid` logger rather than printed, so
+turn logging on to see it:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+```
+
 ## Development
 
 ```bash

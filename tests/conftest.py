@@ -152,6 +152,90 @@ def managements(n: int, start: int = 0) -> list[dict[str, Any]]:
     ]
 
 
+def template_url(method: str) -> str:
+    """URL of the import template for a method, e.g. ``ingest_schema_csv/fishbelt/``."""
+    return f"{API_BASE_URL}ingest_schema_csv/{method}/"
+
+
+def ingest_schema_url(project_id: str, method: str) -> str:
+    """URL of the per-project ingest schema (field options) for a method."""
+    return f"{API_BASE_URL}projects/{project_id}/collectrecords/ingest_schema/{method}/"
+
+
+def ingest_url(project_id: str) -> str:
+    """URL records are POSTed to for import."""
+    return f"{API_BASE_URL}projects/{project_id}/collectrecords/ingest/"
+
+
+def collectrecords_url(project_id: str, action: str | None = None) -> str:
+    """URL of a project's collect records, or of a bulk action on them."""
+    suffix = f"{action}/" if action else ""
+    return f"{API_BASE_URL}projects/{project_id}/collectrecords/{suffix}"
+
+
+def edit_url(project_id: str, endpoint: str, record_id: str) -> str:
+    """URL that moves one submitted record back to Collecting."""
+    return f"{API_BASE_URL}projects/{project_id}/{endpoint}/{record_id}/edit/"
+
+
+def schema_field(
+    label: str,
+    *,
+    name: str | None = None,
+    required: bool = False,
+    help_text: str = "",
+    choices: list[Any] | None = None,
+) -> dict[str, Any]:
+    """Build one field of an ingest-schema response.
+
+    ``choices`` are wrapped as ``{"value": ...}`` objects, which is the shape
+    MERMAID uses; pass dicts to override.
+    """
+    wrapped = [c if isinstance(c, dict) else {"value": c} for c in (choices or [])]
+    return {
+        "name": name if name is not None else label.strip(" *").lower().replace(" ", "_"),
+        "label": label,
+        "required": required,
+        "help_text": help_text,
+        "choices": wrapped,
+    }
+
+
+def collect_records(*statuses: str | None, protocol: str = "fishbelt") -> list[dict[str, Any]]:
+    """Build collect records, one per validation status (``None`` = never validated)."""
+    return [
+        {
+            "id": f"record-{i}",
+            "profile": "profile-1",
+            "stage": 10,
+            "data": {"protocol": protocol},
+            "validations": None if status is None else {"status": status},
+        }
+        for i, status in enumerate(statuses)
+    ]
+
+
+def multipart_fields(request) -> dict[str, str]:
+    """Pull the named parts out of a captured multipart request body.
+
+    Only the text of each part is kept, which is all these tests assert on;
+    the file part comes back under its field name (``file``).
+    """
+    boundary = request.headers["content-type"].split("boundary=")[1].strip('"')
+    body = request.read().decode("utf-8")
+
+    fields: dict[str, str] = {}
+    for chunk in body.split(f"--{boundary}"):
+        if 'name="' not in chunk:
+            continue
+        headers, _, content = chunk.partition("\r\n\r\n")
+        field = headers.split('name="', 1)[1].split('"', 1)[0]
+        # Exactly one CRLF separates a part's body from the next boundary; the
+        # body's own trailing newline (a CSV always ends in one) must survive.
+        fields[field] = content[:-2] if content.endswith("\r\n") else content
+    return fields
+
+
 @pytest.fixture(autouse=True)
 def _no_default_project(monkeypatch):
     """Keep the default-project setting from leaking between tests.
