@@ -891,6 +891,11 @@ def import_bulk_validate(
     neither creates nor moves any -- so unlike the other bulk actions it needs
     no confirmation.
 
+    Parameters
+    ----------
+    project:
+        Exactly one project; ``None`` uses the default project.
+
     Returns
     -------
     pandas.DataFrame
@@ -920,6 +925,14 @@ def import_bulk_submit(
     Collecting for the whole project at once, so ``confirm=True`` is required;
     :func:`import_bulk_edit` is the way back.
 
+    Parameters
+    ----------
+    project:
+        Exactly one project; ``None`` uses the default project.
+    confirm:
+        Must be ``True``.  mermaidr asks at the console; this package takes the
+        answer as an argument so that it can run unattended.
+
     Returns
     -------
     pandas.DataFrame
@@ -929,6 +942,11 @@ def import_bulk_submit(
     ------
     ValueError
         If ``confirm`` is not ``True``; nothing is sent in that case.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.import_bulk_submit("00673bec-...", confirm=True)  # doctest: +SKIP
     """
     if confirm is not True:
         raise ValueError(
@@ -973,6 +991,11 @@ def import_bulk_edit(
     ValueError
         If ``confirm`` is not ``True`` or ``method`` is not a single valid
         method; nothing is sent in that case.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.import_bulk_edit("00673bec-...", "fishbelt", confirm=True)  # doctest: +SKIP
     """
     if confirm is not True:
         raise ValueError(

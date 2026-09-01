@@ -1,15 +1,42 @@
 """A Python client for the MERMAID coral reef monitoring API.
 
-Example
--------
+A port of the R package `mermaidr <https://github.com/data-mermaid/mermaidr>`_.
+Each ``mermaid_*`` function has a ``datamermaid`` equivalent without the
+prefix -- see the migration table in the README.  Tabular results are
+:class:`pandas.DataFrame` objects.
+
+The workflow mirrors mermaidr's: sign in, find projects, pull their data.
+
 >>> import datamermaid
+>>> datamermaid.authenticate()  # doctest: +SKIP
+>>> projects = datamermaid.get_my_projects()  # doctest: +SKIP
+>>> fish = datamermaid.get_project_data(projects, "fishbelt", "sampleevents")  # doctest: +SKIP
+
+Public endpoints need no login:
+
 >>> datamermaid.get_projects(limit=5)  # doctest: +SKIP
+>>> datamermaid.get_reference("fishfamilies")  # doctest: +SKIP
 
 Endpoints that need a login read a token from the ``MERMAID_API_TOKEN``
-environment variable or from the cache written by :func:`authenticate`:
+environment variable or from the cache written by :func:`authenticate`; see
+:mod:`datamermaid.auth`.
 
->>> datamermaid.authenticate()  # doctest: +SKIP
->>> datamermaid.get_my_projects()  # doctest: +SKIP
+Modules
+-------
+:mod:`datamermaid.auth`
+    Sign-in and the token cache.
+:mod:`datamermaid.client`
+    :class:`MermaidClient`, the HTTP layer every function goes through.
+:mod:`datamermaid.projects`
+    Listing and searching projects.
+:mod:`datamermaid.project_endpoints`
+    Project-scoped endpoints (sites, managements) and the default project.
+:mod:`datamermaid.project_data`
+    Survey data by method and aggregation level.
+:mod:`datamermaid.endpoints`
+    Global, unauthenticated endpoints and reference tables.
+:mod:`datamermaid.import_`
+    The write path: templates, checks, ingest and bulk actions.
 """
 
 from __future__ import annotations

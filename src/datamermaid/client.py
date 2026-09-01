@@ -90,6 +90,25 @@ class MermaidClient:
         Per-request timeout in seconds.
     transport:
         Optional :class:`httpx.BaseTransport`, mostly useful for testing.
+
+    Examples
+    --------
+    Every module-level function takes ``client=``, so one client can be shared
+    across calls and closed when done:
+
+    >>> import datamermaid
+    >>> with datamermaid.MermaidClient(token="eyJhbGciOi...") as client:  # doctest: +SKIP
+    ...     me = datamermaid.get_me(client=client)
+    ...     projects = datamermaid.get_my_projects(client=client)
+
+    A mock transport keeps everything offline, which is how the test suite and
+    ``examples/quickstart.py`` run:
+
+    >>> import httpx
+    >>> transport = httpx.MockTransport(lambda request: httpx.Response(200, json=[]))
+    >>> client = datamermaid.MermaidClient(transport=transport)
+    >>> client.get_one("choices")
+    []
     """
 
     def __init__(
@@ -395,7 +414,17 @@ _default_client_lock = threading.Lock()
 
 
 def default_client() -> MermaidClient:
-    """Return the process-wide client used by the module-level functions."""
+    """Return the process-wide client used by the module-level functions.
+
+    The client is created on first use with no token, so authenticated calls
+    resolve one lazily (see :class:`MermaidClient`).
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.default_client().base_url
+    'https://api.datamermaid.org/v1/'
+    """
     global _default_client
     with _default_client_lock:
         if _default_client is None:
@@ -404,7 +433,21 @@ def default_client() -> MermaidClient:
 
 
 def set_default_client(client: MermaidClient | None) -> None:
-    """Replace the process-wide client; pass ``None`` to reset it."""
+    """Replace the process-wide client; pass ``None`` to reset it.
+
+    Use this to point every module-level function at another API root, a
+    longer timeout, or a mock transport, without threading ``client=``
+    through each call.  The previous client is not closed.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> staging = datamermaid.MermaidClient(base_url="https://dev-api.datamermaid.org/v1/")
+    >>> datamermaid.set_default_client(staging)
+    >>> datamermaid.default_client().base_url
+    'https://dev-api.datamermaid.org/v1/'
+    >>> datamermaid.set_default_client(None)  # back to the built-in default
+    """
     global _default_client
     with _default_client_lock:
         _default_client = client

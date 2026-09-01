@@ -107,6 +107,15 @@ def as_project_ids(project: ProjectLike) -> list[str]:
     :class:`~pandas.Series` of ids, and any nesting of those.  Duplicates are
     dropped, keeping first-seen order.
 
+    Every project function accepts the same shapes, so this is rarely called
+    directly; it is exposed so callers can validate a project argument up
+    front.
+
+    Returns
+    -------
+    list[str]
+        The distinct project ids, in first-seen order.
+
     Raises
     ------
     ValueError
@@ -114,6 +123,17 @@ def as_project_ids(project: ProjectLike) -> list[str]:
         column and an empty input, both of which are caller mistakes rather
         than requests for zero projects — or if an id contains ``/``, which
         would rewrite the request path.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.as_project_ids("p1")
+    ['p1']
+    >>> datamermaid.as_project_ids(["p1", {"id": "p2", "name": "Reef"}, "p1"])
+    ['p1', 'p2']
+    >>> import pandas as pd
+    >>> datamermaid.as_project_ids(pd.DataFrame({"id": ["p1", "p2"], "name": ["A", "B"]}))
+    ['p1', 'p2']
     """
     ids = _collect_ids(project)
     if not ids:
@@ -181,6 +201,27 @@ def set_default_project(project: ProjectLike | None) -> None:
 
     The ids are also written to :data:`DEFAULT_PROJECT_ENV_VAR` so that
     subprocesses inherit the default.  Pass ``None`` to clear both.
+
+    Parameters
+    ----------
+    project:
+        Project(s) in any shape :func:`as_project_ids` accepts -- an id, a
+        list of ids, a project record, or a frame of projects -- or ``None``
+        to clear the default.
+
+    Raises
+    ------
+    ValueError
+        If ``project`` holds no usable id.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.set_default_project("00673bec-...")
+    >>> datamermaid.get_default_project()
+    ['00673bec-...']
+    >>> datamermaid.get_project_sites()  # uses the default project  # doctest: +SKIP
+    >>> datamermaid.set_default_project(None)
     """
     global _default_project
 
@@ -202,6 +243,23 @@ def get_default_project() -> list[str] | None:
     A default set in this process wins over
     :data:`DEFAULT_PROJECT_ENV_VAR`, which is used as a fallback so the
     variable can be exported before the interpreter starts.
+
+    Returns
+    -------
+    list[str] or None
+        The default project ids -- always a list, even for a single project,
+        unlike mermaidr's ``mermaid_get_default_project()`` which returns a
+        character vector -- or ``None`` when no default is set.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.set_default_project(["p1", "p2"])
+    >>> datamermaid.get_default_project()
+    ['p1', 'p2']
+    >>> datamermaid.set_default_project(None)
+    >>> datamermaid.get_default_project() is None
+    True
     """
     with _default_project_lock:
         if _default_project is not None:
@@ -297,6 +355,16 @@ def get_project_endpoint(
     ------
     AuthenticationError
         If no access token can be resolved; no request is made.
+    ValueError
+        If no project is given and no default is set.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.get_project_endpoint("00673bec-...", "sites")  # doctest: +SKIP
+    >>> datamermaid.get_project_endpoint(
+    ...     ["00673bec-...", "2c0c9857-..."], "managements", limit=10, est_year=2010
+    ... )  # doctest: +SKIP
     """
     limit = check_limit(limit)
     project_ids = _resolve_project(project)
@@ -384,6 +452,13 @@ def get_project_managements(
 
     See :func:`get_project_endpoint` for the parameters; the columns are
     :data:`MANAGEMENT_COLUMNS`, preceded by :data:`PROJECT_COLUMN`.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.get_project_managements("00673bec-...")  # doctest: +SKIP
+    >>> projects = datamermaid.get_my_projects()  # doctest: +SKIP
+    >>> datamermaid.get_project_managements(projects)  # one frame, all projects  # doctest: +SKIP
     """
     return get_project_endpoint(
         project,
