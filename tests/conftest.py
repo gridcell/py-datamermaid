@@ -152,6 +152,33 @@ def managements(n: int, start: int = 0) -> list[dict[str, Any]]:
     ]
 
 
+def global_url(endpoint: str) -> str:
+    """URL of a global endpoint, e.g. ``sites/``."""
+    return f"{API_BASE_URL}{endpoint.strip('/')}/"
+
+
+def choices_payload() -> list[dict[str, Any]]:
+    """Build a ``choices/`` response: a bare list of ``{name, data}`` vocabularies."""
+    return [
+        {
+            "name": "countries",
+            "data": [
+                {"id": "c-fj", "name": "Fiji", "updated_on": "2020-01-01T00:00:00Z"},
+                {"id": "c-id", "name": "Indonesia", "updated_on": "2020-01-01T00:00:00Z"},
+                {"id": "c-au", "name": "Australia", "updated_on": "2020-01-01T00:00:00Z"},
+            ],
+        },
+        {
+            "name": "reeftypes",
+            "data": [
+                {"id": "rt-1", "name": "fringing", "regions": ["r1", "r2"]},
+                {"id": "rt-2", "name": "barrier", "regions": []},
+            ],
+        },
+        {"name": "empty", "data": []},
+    ]
+
+
 def template_url(method: str) -> str:
     """URL of the import template for a method, e.g. ``ingest_schema_csv/fishbelt/``."""
     return f"{API_BASE_URL}ingest_schema_csv/{method}/"

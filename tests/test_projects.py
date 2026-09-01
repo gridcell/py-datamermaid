@@ -247,6 +247,14 @@ class TestSearchProjects:
         assert "Authorization" not in route.calls.last.request.headers
 
     @respx.mock
+    def test_test_projects_are_included_only_when_asked(self, client):
+        route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+        search_projects(name="anything", include_test_projects=True, client=client)
+
+        assert "status" not in query_of(route.calls.last.request)
+
+    @respx.mock
     def test_without_filters_it_matches_get_projects(self, client):
         respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(projects(3))))
 

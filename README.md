@@ -40,6 +40,42 @@ Endpoints that do not require authentication work out of the box.
 Failed requests raise `datamermaid.MermaidAPIError`, which carries the HTTP
 `status_code`.
 
+### Global data
+
+MERMAID publishes its sites, management regimes, reference tables and summary
+data without a login. Each getter returns a `DataFrame` and takes the same
+`limit` as `get_projects()`:
+
+```python
+sites = datamermaid.get_sites(limit=100)
+managements = datamermaid.get_managements()
+events = datamermaid.get_summary_sampleevents(limit=1000)  # large; sample it
+
+fish_families = datamermaid.get_reference("fishfamilies")
+```
+
+`get_reference()` accepts `"fishfamilies"`, `"fishgenera"`, `"fishspecies"`,
+`"benthicattributes"` or `"fishgroupings"` and raises `ValueError` listing those
+options for anything else.
+
+`get_choices()` returns MERMAID's controlled vocabularies as a dict of frames,
+one per vocabulary, and `countries()` pulls the country names out of it:
+
+```python
+choices = datamermaid.get_choices()
+choices["reeftypes"]  # DataFrame with id, name, ...
+datamermaid.countries()[:3]  # ['Afghanistan', 'Albania', 'Algeria']
+```
+
+Any other global endpoint can be reached with the generic getter, which passes
+extra keyword arguments through as query parameters. Endpoint names outside
+`datamermaid.KNOWN_ENDPOINTS` are still requested, with a `UserWarning`:
+
+```python
+datamermaid.get_endpoint("fishsizes")
+datamermaid.get_endpoint("sites", country="Fiji", limit=50)
+```
+
 ## Authentication
 
 Your own projects, and anything else behind a login, need a MERMAID access
