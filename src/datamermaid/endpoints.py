@@ -50,7 +50,10 @@ REFERENCE_ENDPOINTS = (
 
 #: Global endpoints known to answer a plain paginated GET.  :func:`get_endpoint`
 #: accepts any string, but warns about one not listed here since a typo would
-#: otherwise surface only as an HTTP 404.
+#: otherwise surface only as an HTTP 404.  ``projects`` is listed because it is
+#: a real global endpoint, but unauthenticated it only lists *your* projects
+#: (i.e. none) unless ``showall="true"`` is passed; :func:`datamermaid.get_projects`
+#: and :func:`datamermaid.search_projects` take care of that.
 KNOWN_ENDPOINTS = frozenset(
     {
         "benthicattributes",
@@ -91,7 +94,10 @@ def get_endpoint(
         Endpoint name relative to the API root, e.g. ``"fishsizes"``.  Names
         outside :data:`KNOWN_ENDPOINTS` are still requested, with a
         :class:`UserWarning`, so a new endpoint can be reached before this
-        package learns about it.
+        package learns about it.  For ``"projects"`` prefer
+        :func:`datamermaid.get_projects` or :func:`datamermaid.search_projects`:
+        without a login the raw endpoint returns nothing unless
+        ``showall="true"`` is passed, which those functions do for you.
     limit:
         Maximum number of records to return.  ``None`` (the default) returns
         every record, paginating as needed.
@@ -302,11 +308,21 @@ def get_choices(*, client: MermaidClient | None = None) -> dict[str, pd.DataFram
     >>> choices = datamermaid.get_choices()  # doctest: +SKIP
     >>> choices["reeftypes"]  # doctest: +SKIP
     """
+    # Not paginated, so fetch it as one object rather than sending ``?limit=``.
     with client_context(client) as api:
-        records = api.get("choices", require_auth=False)
+        payload = api.get_one("choices", require_auth=False)
+
+    # Defensive: tolerate the usual envelope should the API ever adopt it here.
+    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+        payload = payload["results"]
+    if not isinstance(payload, list):
+        raise MermaidError(
+            "Unexpected `choices/` payload: expected a list of {name, data} objects, "
+            f"got {type(payload).__name__}."
+        )
 
     choices: dict[str, pd.DataFrame] = {}
-    for record in records:
+    for record in payload:
         if not isinstance(record, dict) or "name" not in record:
             raise MermaidError(
                 "Unexpected `choices/` payload: expected a list of {name, data} objects, "

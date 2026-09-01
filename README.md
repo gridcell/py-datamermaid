@@ -63,8 +63,8 @@ one per vocabulary, and `countries()` pulls the country names out of it:
 
 ```python
 choices = datamermaid.get_choices()
-choices["reeftypes"]           # DataFrame with id, name, ...
-datamermaid.countries()[:3]    # ['Afghanistan', 'Albania', 'Algeria']
+choices["reeftypes"]  # DataFrame with id, name, ...
+datamermaid.countries()[:3]  # ['Afghanistan', 'Albania', 'Algeria']
 ```
 
 Any other global endpoint can be reached with the generic getter, which passes

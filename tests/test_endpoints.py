@@ -337,7 +337,10 @@ class TestGetChoices:
         get_choices(client=client)
 
         assert route.call_count == 1
-        assert "Authorization" not in route.calls.last.request.headers
+        request = route.calls.last.request
+        assert "Authorization" not in request.headers
+        # Not a paginated endpoint, so no page size is requested either.
+        assert "limit" not in query_of(request)
 
     @respx.mock
     def test_a_paginated_envelope_is_also_understood(self, client):
