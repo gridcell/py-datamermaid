@@ -27,6 +27,7 @@ from .exceptions import AuthenticationError, MermaidAPIError
 __all__ = [
     "API_BASE_URL",
     "DEFAULT_PAGE_SIZE",
+    "OPTIONAL_AUTH",
     "USER_AGENT",
     "MermaidClient",
     "check_limit",
@@ -36,6 +37,12 @@ __all__ = [
 ]
 
 API_BASE_URL = "https://api.datamermaid.org/v1/"
+
+#: Pass as ``require_auth`` to send a bearer token when one can be resolved and
+#: to fall back to an unauthenticated request when it cannot.  Used for
+#: endpoints that are public but return more (or are simply happier) when the
+#: caller is signed in.
+OPTIONAL_AUTH = "optional"
 
 #: The API caps ``?limit=`` at 5000 records per page.
 DEFAULT_PAGE_SIZE = 5000
@@ -154,6 +161,62 @@ class MermaidClient:
             )
         return AuthenticationError(f"HTTP {response.status_code} from {response.url}. {advice}")
 
+    def _token_for(self, require_auth: bool | str) -> auth.ResolvedToken | None:
+        """Resolve the token to send for a request.
+
+        ``True`` insists on one -- raising if none can be found -- and
+        :data:`OPTIONAL_AUTH` sends one only when it happens to be available.
+        """
+        if require_auth is True:
+            return self._resolve_token()
+        if require_auth == OPTIONAL_AUTH:
+            return auth.resolve_token(self.token)
+        return None
+
+    def _send(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        resolved: auth.ResolvedToken | None = None,
+        headers: dict[str, str] | None = None,
+        json: Any | None = None,
+        files: Any | None = None,
+        data: Any | None = None,
+        raise_for_error: bool = True,
+    ) -> httpx.Response:
+        """Issue one request, mapping an unsuccessful response onto our errors.
+
+        A refused token always raises, whatever ``raise_for_error`` says: no
+        caller can make anything of a 401.  Other failures are handed back
+        unraised when ``raise_for_error`` is false, for the endpoints whose
+        error *body* is the useful part of the answer (the ingest endpoint
+        reports per-row problems that way).
+        """
+        request_headers = dict(headers or {})
+        if resolved is not None:
+            request_headers["Authorization"] = f"Bearer {resolved.access_token}"
+
+        response = self._client.request(
+            method,
+            url,
+            params=params,
+            headers=request_headers or None,
+            json=json,
+            files=files,
+            data=data,
+        )
+        if resolved is not None and response.status_code in (401, 403):
+            raise self._auth_failure(response, resolved)
+        if response.is_error and raise_for_error:
+            raise MermaidAPIError(
+                status_code=response.status_code,
+                reason=response.reason_phrase,
+                url=str(response.request.url),
+            )
+        return response
+
     def _request(
         self,
         url: str,
@@ -163,20 +226,7 @@ class MermaidClient:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """GET ``url``, mapping an unsuccessful response onto this package's errors."""
-        request_headers = dict(headers or {})
-        if resolved is not None:
-            request_headers["Authorization"] = f"Bearer {resolved.access_token}"
-
-        response = self._client.get(url, params=params, headers=request_headers or None)
-        if resolved is not None and response.status_code in (401, 403):
-            raise self._auth_failure(response, resolved)
-        if response.is_error:
-            raise MermaidAPIError(
-                status_code=response.status_code,
-                reason=response.reason_phrase,
-                url=str(response.request.url),
-            )
-        return response
+        return self._send("GET", url, params=params, resolved=resolved, headers=headers)
 
     def _get_json(
         self,
@@ -192,7 +242,7 @@ class MermaidClient:
         endpoint: str,
         *,
         params: dict[str, Any] | None = None,
-        require_auth: bool = True,
+        require_auth: bool | str = True,
     ) -> pd.DataFrame:
         """Fetch ``endpoint`` as CSV and parse it into a :class:`~pandas.DataFrame`.
 
@@ -202,7 +252,7 @@ class MermaidClient:
         does the same in ``get_csv_response``.  An empty body yields an empty
         frame rather than raising.
         """
-        resolved = self._resolve_token() if require_auth else None
+        resolved = self._token_for(require_auth)
         response = self._request(
             self.url_for(endpoint),
             params=params,
@@ -214,19 +264,58 @@ class MermaidClient:
             return pd.DataFrame()
         return pd.read_csv(io.StringIO(response.text))
 
+    def send(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+        files: Any | None = None,
+        data: Any | None = None,
+        require_auth: bool | str = True,
+        raise_for_error: bool = True,
+    ) -> httpx.Response:
+        """Issue a write request to ``endpoint`` and return the raw response.
+
+        The write endpoints (record ingest, bulk validate/submit/edit) answer
+        with payloads too varied to parse here, and the ingest endpoint puts
+        the per-row problems it found in the body of a *failed* response, so
+        the response object itself is what comes back.  ``require_auth``
+        defaults to ``True``: nothing in MERMAID can be written anonymously.
+        """
+        return self._send(
+            method,
+            self.url_for(endpoint),
+            params=params,
+            resolved=self._token_for(require_auth),
+            json=json,
+            files=files,
+            data=data,
+            raise_for_error=raise_for_error,
+        )
+
+    def post(self, endpoint: str, **kwargs: Any) -> httpx.Response:
+        """POST to ``endpoint``; see :meth:`send`."""
+        return self.send("POST", endpoint, **kwargs)
+
+    def put(self, endpoint: str, **kwargs: Any) -> httpx.Response:
+        """PUT to ``endpoint``; see :meth:`send`."""
+        return self.send("PUT", endpoint, **kwargs)
+
     def get_one(
         self,
         endpoint: str,
         *,
         params: dict[str, Any] | None = None,
-        require_auth: bool = False,
+        require_auth: bool | str = False,
     ) -> Any:
         """Fetch ``endpoint`` as a single object, without paginating.
 
         A few endpoints (``me/``, for one) answer with a bare object rather
         than the usual ``{count, next, previous, results}`` envelope.
         """
-        resolved = self._resolve_token() if require_auth else None
+        resolved = self._token_for(require_auth)
         return self._get_json(self.url_for(endpoint), params=params, resolved=resolved)
 
     def get(
@@ -235,7 +324,7 @@ class MermaidClient:
         *,
         limit: int | None = None,
         params: dict[str, Any] | None = None,
-        require_auth: bool = False,
+        require_auth: bool | str = False,
     ) -> list[dict[str, Any]]:
         """Fetch every record from ``endpoint``, following pagination.
 
@@ -249,7 +338,7 @@ class MermaidClient:
         sends it as a bearer token on every page.
         """
         limit = check_limit(limit)
-        resolved = self._resolve_token() if require_auth else None
+        resolved = self._token_for(require_auth)
 
         query: dict[str, Any] | None = dict(params or {})
         query["limit"] = DEFAULT_PAGE_SIZE if limit is None else min(limit, DEFAULT_PAGE_SIZE)

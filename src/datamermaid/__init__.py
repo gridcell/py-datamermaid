@@ -23,6 +23,15 @@ from .client import (
     set_default_client,
 )
 from .exceptions import AuthenticationError, MermaidAPIError, MermaidError
+from .import_ import (
+    METHOD_ENDPOINTS,
+    import_bulk_edit,
+    import_bulk_submit,
+    import_bulk_validate,
+    import_check_options,
+    import_get_template_and_options,
+    import_project_data,
+)
 from .me import get_me
 from .project_data import (
     DATA_LEVELS,
@@ -49,6 +58,7 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_PROJECT_ENV_VAR",
     "METHODS",
+    "METHOD_ENDPOINTS",
     "TOKEN_ENV_VAR",
     "AuthenticationError",
     "MermaidAPIError",
@@ -69,6 +79,12 @@ __all__ = [
     "get_project_sites",
     "get_projects",
     "get_token",
+    "import_bulk_edit",
+    "import_bulk_submit",
+    "import_bulk_validate",
+    "import_check_options",
+    "import_get_template_and_options",
+    "import_project_data",
     "search_my_projects",
     "search_projects",
     "set_default_client",
