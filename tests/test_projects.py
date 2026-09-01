@@ -6,7 +6,7 @@ import httpx
 import respx
 
 from datamermaid import get_projects, search_projects
-from datamermaid.client import DEFAULT_BASE_URL
+from datamermaid.client import DEFAULT_BASE_URL, DEFAULT_PAGE_SIZE
 from datamermaid.projects import _filter_projects, _is_test_project
 
 PROJECTS_URL = DEFAULT_BASE_URL + "projects/"
@@ -30,8 +30,8 @@ PROJECTS = [
 ]
 
 
-def page(results):
-    return {"count": len(results), "next": None, "previous": None, "results": results}
+def page(results, next_url=None):
+    return {"count": len(results), "next": next_url, "previous": None, "results": results}
 
 
 @respx.mock
@@ -98,3 +98,38 @@ def test_filters_stringify_unexpected_field_types():
     odd = [{"id": "9", "name": "Odd", "tags": 42}]
 
     assert _filter_projects(odd, tag="42") == odd
+
+
+@respx.mock
+def test_get_projects_lets_the_api_apply_the_limit():
+    route = respx.get(PROJECTS_URL).mock(
+        return_value=httpx.Response(200, json=page(PROJECTS[:1], next_url=PROJECTS_URL + "?p=2"))
+    )
+
+    assert [project["id"] for project in get_projects(limit=1)] == ["1"]
+
+    assert route.calls.last.request.url.params["limit"] == "1"
+    assert route.call_count == 1  # no paging beyond what the limit needs
+
+
+@respx.mock
+def test_get_projects_keeps_paging_until_the_limit_is_filled():
+    """Test projects are dropped locally, so a short page can be all filler."""
+    route = respx.get(PROJECTS_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=page([PROJECTS[2]], next_url=PROJECTS_URL + "?p=2")),
+            httpx.Response(200, json=page([PROJECTS[0]])),
+        ]
+    )
+
+    assert [project["id"] for project in get_projects(limit=1)] == ["1"]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_search_projects_fetches_everything_before_limiting():
+    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page(PROJECTS)))
+
+    assert [project["id"] for project in search_projects(tag="WCS", limit=1)] == ["1"]
+
+    assert route.calls.last.request.url.params["limit"] == str(DEFAULT_PAGE_SIZE)

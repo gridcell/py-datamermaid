@@ -187,3 +187,32 @@ def test_get_records_rejects_an_unexpected_shape():
 def test_base_url_always_ends_in_a_slash():
     with MermaidClient(base_url="https://example.org/v1") as client:
         assert client.base_url == "https://example.org/v1/"
+
+
+@respx.mock
+def test_iter_records_fetches_pages_only_as_they_are_consumed():
+    second = PROJECTS_URL + "?page=2"
+    route = respx.get(PROJECTS_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=page([{"id": 1}], next_url=second)),
+            httpx.Response(200, json=page([{"id": 2}])),
+        ]
+    )
+
+    with MermaidClient() as client:
+        records = client.iter_records("projects/")
+        assert next(records)["id"] == 1
+        assert route.call_count == 1  # the second page has not been asked for yet
+        assert [record["id"] for record in records] == [2]
+
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_iter_records_asks_for_the_requested_page_size():
+    route = respx.get(PROJECTS_URL).mock(return_value=httpx.Response(200, json=page([])))
+
+    with MermaidClient() as client:
+        assert list(client.iter_records("projects/", page_size=5)) == []
+
+    assert route.calls.last.request.url.params["limit"] == "5"

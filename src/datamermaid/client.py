@@ -143,6 +143,35 @@ class MermaidClient:
             )
         return AuthenticationError(f"HTTP {response.status_code} from {response.url}. {advice}")
 
+    def iter_records(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        *,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        require_auth: bool = False,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield records from ``endpoint`` one at a time, following pagination.
+
+        Pages are only fetched as they are needed, so a caller that filters
+        records itself can stop early instead of downloading everything.
+        """
+        query: dict[str, Any] | None = {"limit": page_size, **(params or {})}
+        url = endpoint
+        seen: set[str] = set()
+        while url and url not in seen:
+            seen.add(url)
+            payload = self.get(url, params=query, require_auth=require_auth)
+            if isinstance(payload, list):
+                yield from payload
+                return
+            if not isinstance(payload, dict):
+                raise MermaidAPIError(f"Unexpected response shape for {url}: {type(payload)!r}")
+            yield from payload.get("results") or []
+            # ``next`` is an absolute URL that already carries the query string.
+            url = payload.get("next") or ""
+            query = None
+
     def get_records(
         self,
         endpoint: str,
@@ -155,27 +184,15 @@ class MermaidClient:
 
         ``limit`` caps the number of records returned and stops paging early.
         """
-        page_size = DEFAULT_PAGE_SIZE if limit is None else min(limit, DEFAULT_PAGE_SIZE)
-        query: dict[str, Any] | None = {"limit": page_size, **(params or {})}
-
+        page_size = DEFAULT_PAGE_SIZE if limit is None else max(1, min(limit, DEFAULT_PAGE_SIZE))
         records: list[dict[str, Any]] = []
-        url = endpoint
-        seen: set[str] = set()
-        while url and url not in seen:
-            seen.add(url)
-            payload = self.get(url, params=query, require_auth=require_auth)
-            if isinstance(payload, list):
-                records.extend(payload)
-                break
-            if not isinstance(payload, dict):
-                raise MermaidAPIError(f"Unexpected response shape for {url}: {type(payload)!r}")
-            records.extend(payload.get("results") or [])
-            if limit is not None and len(records) >= limit:
-                break
-            # ``next`` is an absolute URL that already carries the query string.
-            url = payload.get("next") or ""
-            query = None
-        return records[:limit] if limit is not None else records
+        pages = self.iter_records(endpoint, params, page_size=page_size, require_auth=require_auth)
+        with contextlib.closing(pages):
+            for record in pages:
+                records.append(record)
+                if limit is not None and len(records) >= limit:
+                    break
+        return records
 
 
 @contextlib.contextmanager

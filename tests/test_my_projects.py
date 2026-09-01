@@ -129,3 +129,16 @@ def test_search_my_projects_sends_the_token(monkeypatch, projects_route):
     request = projects_route.calls.last.request
     assert request.headers["authorization"] == "Bearer env-token"
     assert "showall" not in request.url.params
+
+
+@respx.mock
+def test_get_my_projects_lets_the_api_apply_the_limit(monkeypatch):
+    monkeypatch.setenv(auth.TOKEN_ENV_VAR, "env-token")
+    route = respx.get(PROJECTS_URL).mock(
+        return_value=httpx.Response(200, json=page(MY_PROJECTS[:1], next_url=PROJECTS_URL + "?p=2"))
+    )
+
+    assert [project["id"] for project in get_my_projects(limit=1)] == ["1"]
+
+    assert route.calls.last.request.url.params["limit"] == "1"
+    assert route.call_count == 1

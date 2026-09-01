@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import socket
 import stat
 import threading
 import time
@@ -552,3 +553,130 @@ def test_authenticate_falls_back_to_the_device_code_flow(monkeypatch, capsys):
     assert auth.authenticate() == "device-token"
     assert "no browser here" in capsys.readouterr().out
     assert auth.read_cached_token() == "device-token"
+
+
+def test_callback_server_ignores_requests_that_are_not_the_redirect():
+    """A stray local request must not be mistaken for the OAuth callback."""
+    server = auth._bind_callback_server()
+    base = f"http://localhost:{server.server_port}/"
+    try:
+        stray = _request_in_background(server, base + "favicon.ico")
+        assert stray.status_code == 404
+        assert server.callback_query is None
+
+        real = _request_in_background(server, base + "?code=the-code&state=st4te")
+        assert real.status_code == 200
+        assert server.callback_query == {"code": ["the-code"], "state": ["st4te"]}
+    finally:
+        server.server_close()
+
+
+def test_callback_server_records_an_error_redirect():
+    server = auth._bind_callback_server()
+    try:
+        url = f"http://localhost:{server.server_port}/?error=access_denied"
+        assert _request_in_background(server, url).status_code == 200
+        assert server.callback_query == {"error": ["access_denied"]}
+    finally:
+        server.server_close()
+
+
+def test_callback_handler_bounds_a_silent_connection():
+    """Set so a connection that never sends a request cannot stall the loop."""
+    assert auth._CallbackHandler.timeout == auth.CALLBACK_SOCKET_TIMEOUT_SECONDS
+
+
+def _addrinfo(*addresses):
+    return [(family, socket.SOCK_STREAM, 6, "", (host, 0)) for family, host in addresses]
+
+
+def test_loopback_address_prefers_ipv4(monkeypatch):
+    monkeypatch.setattr(
+        auth.socket,
+        "getaddrinfo",
+        lambda *a, **k: _addrinfo((socket.AF_INET6, "::1"), (socket.AF_INET, "127.0.0.1")),
+    )
+    assert auth._loopback_address() == (socket.AF_INET, "127.0.0.1")
+
+
+def test_loopback_address_uses_ipv6_when_localhost_is_ipv6_only(monkeypatch):
+    monkeypatch.setattr(
+        auth.socket, "getaddrinfo", lambda *a, **k: _addrinfo((socket.AF_INET6, "::1"))
+    )
+    assert auth._loopback_address() == (socket.AF_INET6, "::1")
+
+
+def test_loopback_address_falls_back_when_localhost_does_not_resolve(monkeypatch):
+    monkeypatch.setattr(auth.socket, "getaddrinfo", lambda *a, **k: [])
+    assert auth._loopback_address() == (socket.AF_INET, "127.0.0.1")
+
+
+def test_callback_server_is_reachable_over_ipv6_localhost(monkeypatch):
+    monkeypatch.setattr(auth, "_loopback_address", lambda: (socket.AF_INET6, "::1"))
+    try:
+        server = auth._bind_callback_server()
+    except OSError:  # pragma: no cover - depends on the sandbox
+        pytest.skip("no IPv6 loopback available")
+
+    try:
+        assert server.socket.family == socket.AF_INET6
+        url = f"http://localhost:{server.server_port}/?code=the-code&state=st4te"
+        assert _request_in_background(server, url).status_code == 200
+    finally:
+        server.server_close()
+
+
+@respx.mock
+def test_browser_flow_ignores_a_stray_request_before_the_redirect(monkeypatch):
+    """A favicon fetch or an old tab must not abort the wait for the callback."""
+    respx.route(host="localhost").pass_through()
+    respx.post(auth.TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"access_token": "issued", "expires_in": 3600})
+    )
+
+    def fake_browser(url: str) -> bool:
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
+        redirect = query["redirect_uri"]
+
+        def visit():
+            httpx.get(redirect + "favicon.ico", timeout=10)
+            httpx.get(redirect, params={"code": "the-code", "state": query["state"]}, timeout=10)
+
+        threading.Thread(target=visit).start()
+        return True
+
+    monkeypatch.setattr(auth.webbrowser, "open", fake_browser)
+
+    token, _ = auth._run_browser_flow(timeout=10)
+
+    assert token == "issued"
+
+
+def test_browser_flow_gives_up_at_once_when_no_browser_can_be_opened(monkeypatch):
+    """``webbrowser.open`` returns False instead of raising on headless hosts."""
+    monkeypatch.setattr(auth.webbrowser, "open", lambda url: False)
+    started = time.monotonic()
+
+    with pytest.raises(auth._BrowserFlowUnavailable, match="no usable browser"):
+        auth._run_browser_flow(timeout=60)
+
+    assert time.monotonic() - started < 5
+
+
+def test_parse_token_response_redacts_credentials_from_the_error(capsys):
+    payload = {
+        "id_token": "secret-jwt",
+        "refresh_token": "secret-refresh",
+        "error": "invalid_scope",
+        "error_description": "the audience is wrong",
+    }
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        auth._parse_token_response(payload)
+
+    message = str(excinfo.value)
+    assert "secret-jwt" not in message
+    assert "secret-refresh" not in message
+    assert "<redacted>" in message
+    assert "the audience is wrong" in message
+    assert payload["id_token"] == "secret-jwt"  # the response itself is untouched

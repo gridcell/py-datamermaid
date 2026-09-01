@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable
 from typing import Any
 
-from .client import MermaidClient, client_context
+from .client import DEFAULT_PAGE_SIZE, MermaidClient, client_context
 
 __all__ = [
     "get_projects",
@@ -74,6 +75,20 @@ def _filter_projects(
     return matched
 
 
+def _take_projects(
+    records: Iterable[Project], *, include_test_projects: bool, limit: int | None
+) -> list[Project]:
+    """Collect up to ``limit`` records, skipping test projects as they arrive."""
+    kept: list[Project] = []
+    for record in records:
+        if not include_test_projects and _is_test_project(record):
+            continue
+        kept.append(record)
+        if limit is not None and len(kept) >= limit:
+            break
+    return kept
+
+
 def _fetch_projects(
     *,
     require_auth: bool,
@@ -85,24 +100,30 @@ def _fetch_projects(
     client: MermaidClient | None = None,
     token: str | None = None,
 ) -> list[Project]:
-    filtering = not include_test_projects or any(x is not None for x in (name, country, tag))
+    searching = any(x is not None for x in (name, country, tag))
     params: dict[str, Any] = {}
     if not require_auth:
         # Unauthenticated callers must ask for the full public project list.
         params["showall"] = "true"
 
-    with client_context(client, token) as api:
-        records = api.get_records(
-            PROJECTS_ENDPOINT,
-            params=params,
-            # Client-side filters can drop records, so only let the API apply
-            # the limit when nothing will be removed afterwards.
-            limit=None if filtering else limit,
-            require_auth=require_auth,
-        )
+    # Name/country/tag matching happens here, so every project has to be fetched
+    # before the limit can be applied.  Dropping test projects is local too, but
+    # there the pages can simply be read until enough records have been kept.
+    page_size = DEFAULT_PAGE_SIZE
+    if limit is not None and not searching:
+        page_size = max(1, min(limit, DEFAULT_PAGE_SIZE))
 
-    if not include_test_projects:
-        records = [record for record in records if not _is_test_project(record)]
+    with client_context(client, token) as api:
+        pages = api.iter_records(
+            PROJECTS_ENDPOINT, params=params, page_size=page_size, require_auth=require_auth
+        )
+        with contextlib.closing(pages):
+            if not searching:
+                return _take_projects(
+                    pages, include_test_projects=include_test_projects, limit=limit
+                )
+            records = _take_projects(pages, include_test_projects=include_test_projects, limit=None)
+
     records = _filter_projects(records, name=name, country=country, tag=tag)
     return records[:limit] if limit is not None else records
 

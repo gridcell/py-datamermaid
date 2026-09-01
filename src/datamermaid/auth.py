@@ -23,6 +23,7 @@ import http.server
 import json
 import os
 import secrets
+import socket
 import time
 import urllib.parse
 import webbrowser
@@ -62,6 +63,16 @@ DEFAULT_EXPIRES_IN = 86400.0
 
 #: How long to wait for the browser redirect before falling back.
 BROWSER_TIMEOUT_SECONDS = 180.0
+
+#: How long a single connection to the callback server may stay silent.  Browsers
+#: routinely open speculative connections without sending a request; without this
+#: one of them would block the single-threaded handler loop forever.
+CALLBACK_SOCKET_TIMEOUT_SECONDS = 10.0
+
+#: Keys whose values must never be echoed back in an error message.
+_SECRET_RESPONSE_KEYS = frozenset(
+    {"access_token", "id_token", "refresh_token", "device_code", "code", "token"}
+)
 
 HTTP_TIMEOUT_SECONDS = 30.0
 
@@ -217,13 +228,25 @@ def _device_token_payload(device_code: str) -> dict[str, str]:
     }
 
 
+def _redacted(payload: dict) -> dict:
+    """Copy ``payload`` with any credential-bearing values masked.
+
+    A response missing ``access_token`` can still carry an ``id_token`` or a
+    refresh token, and this ends up in an exception message and the logs.
+    """
+    return {
+        key: ("<redacted>" if key in _SECRET_RESPONSE_KEYS and value else value)
+        for key, value in payload.items()
+    }
+
+
 def _parse_token_response(payload: dict, *, now: float | None = None) -> tuple[str, float]:
     """Turn an Auth0 token response into ``(access_token, expires_at)``."""
     token = payload.get("access_token")
     if not token:
         raise AuthenticationError(
             "Auth0 did not return an access token; the response was: "
-            f"{json.dumps(payload, default=str)}"
+            f"{json.dumps(_redacted(payload), default=str)}"
         )
     now = time.time() if now is None else now
     try:
@@ -348,11 +371,25 @@ def _run_device_code_flow(
 
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Single-shot handler that records the query string of the redirect."""
+    """Handler that records the query string of the OAuth redirect.
+
+    The redirect port is fixed and well known, so unrelated local requests --
+    a favicon fetch, a restored browser tab from an earlier attempt, a port
+    probe -- do reach this server.  Only a request that actually looks like the
+    Auth0 callback is recorded; everything else gets a 404 and the flow keeps
+    waiting for the real one.
+    """
+
+    #: Applied to the connection socket by ``StreamRequestHandler.setup``, so a
+    #: client that connects without sending a request cannot stall the loop.
+    timeout = CALLBACK_SOCKET_TIMEOUT_SECONDS
 
     def do_GET(self) -> None:  # noqa: N802 - name mandated by BaseHTTPRequestHandler
-        query = urllib.parse.urlparse(self.path).query
-        self.server.callback_query = urllib.parse.parse_qs(query)  # type: ignore[attr-defined]
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if not ("code" in query or "error" in query):
+            self.send_error(404)
+            return
+        self.server.callback_query = query  # type: ignore[attr-defined]
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(_CALLBACK_PAGE)))
@@ -363,13 +400,51 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         """Silence the default stderr access log."""
 
 
-def _bind_callback_server() -> http.server.HTTPServer:
+def _loopback_address() -> tuple[int, str]:
+    """Return the ``(family, host)`` to bind so ``localhost`` reaches us.
+
+    The redirect URI has to say ``localhost`` (that is what Auth0 whitelists),
+    but on some hosts that name resolves only to ``::1``, where a server bound
+    to ``127.0.0.1`` would never be reached.  IPv4 is preferred when available
+    because browsers fall back to it, and it keeps the well-known port check
+    meaningful.
+    """
+    try:
+        infos = socket.getaddrinfo("localhost", None, type=socket.SOCK_STREAM)
+    except OSError:  # pragma: no cover - name resolution is always available
+        infos = []
+    candidates = [
+        (int(family), str(sockaddr[0]))
+        for family, _type, _proto, _canon, sockaddr in infos
+        if family in (socket.AF_INET, socket.AF_INET6)
+    ]
+    for family, host in candidates:
+        if family == socket.AF_INET:
+            return family, host
+    return candidates[0] if candidates else (int(socket.AF_INET), "127.0.0.1")
+
+
+class _CallbackServer(http.server.HTTPServer):
+    """Loopback HTTP server that holds the recorded OAuth callback query."""
+
+    callback_query: dict[str, list[str]] | None = None
+
+
+class _CallbackServerV6(_CallbackServer):
+    """The same server for hosts where ``localhost`` is IPv6-only."""
+
+    address_family = socket.AF_INET6
+
+
+def _bind_callback_server() -> _CallbackServer:
+    family, host = _loopback_address()
+    server_class = _CallbackServerV6 if family == socket.AF_INET6 else _CallbackServer
     for port in (DEFAULT_REDIRECT_PORT, 0):
         try:
-            server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
+            server = server_class((host, port), _CallbackHandler)
         except OSError:
             continue
-        server.callback_query = None  # type: ignore[attr-defined]
+        server.callback_query = None
         return server
     raise _BrowserFlowUnavailable("could not listen for the sign-in redirect on localhost")
 
@@ -386,14 +461,27 @@ def _run_browser_flow(
         state = secrets.token_urlsafe(16)
         url = _authorize_url(redirect_uri=redirect_uri, code_challenge=code_challenge, state=state)
         print(f"Opening your browser to sign in to MERMAID.\nIf it does not open, visit:\n  {url}")
-        webbrowser.open(url)
+        # ``open`` returns False (it does not raise) when no browser is
+        # registered, e.g. on a headless machine; waiting out the timeout in
+        # that case would only delay the device code fallback.
+        try:
+            opened = webbrowser.open(url)
+        except webbrowser.Error:  # pragma: no cover - platform dependent
+            opened = False
+        if not opened:
+            raise _BrowserFlowUnavailable("no usable browser was found")
 
-        server.timeout = timeout
         deadline = time.monotonic() + timeout
         query = None
-        while query is None and time.monotonic() < deadline:
+        while query is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # Only bound the wait for the next connection; requests that are not
+            # the callback (see _CallbackHandler) leave callback_query unset.
+            server.timeout = remaining
             server.handle_request()
-            query = getattr(server, "callback_query", None)
+            query = getattr(server, "callback_query", None) or None
         if query is None:
             raise _BrowserFlowUnavailable("timed out waiting for the browser redirect")
         if "error" in query:
