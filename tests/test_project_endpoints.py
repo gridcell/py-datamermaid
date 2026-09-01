@@ -414,3 +414,54 @@ class TestResult:
 
         assert df.columns[0] == "project"
         assert {"id", "name", "country", "reef_zone"} <= set(df.columns)
+
+    @respx.mock
+    def test_differing_field_subsets_keep_the_documented_column_order(self, auth_client):
+        # p2 omits `reef_type`, so concatenating orders columns by first
+        # appearance unless the result is put back into SITE_COLUMNS order.
+        respx.get(project_url("p1", "sites")).mock(
+            return_value=httpx.Response(
+                200, json=page([{"id": "site-0", "name": "Site 0", "reef_type": "fringing"}])
+            )
+        )
+        respx.get(project_url("p2", "sites")).mock(
+            return_value=httpx.Response(
+                200, json=page([{"id": "site-1", "name": "Site 1", "country": "Fiji"}])
+            )
+        )
+
+        df = get_project_sites(["p1", "p2"], client=auth_client)
+
+        assert list(df.columns) == ["project", "id", "name", "country", "reef_type"]
+        assert pd.isna(df.loc[0, "country"])
+
+
+class TestProjectIdValidation:
+    @pytest.mark.parametrize("value", ["../../danger", "p1/sites", "/p1"])
+    def test_an_id_containing_a_slash_raises(self, value):
+        with pytest.raises(ValueError, match="cannot contain"):
+            as_project_ids(value)
+
+    def test_a_traversing_id_makes_no_request(self, auth_client):
+        with respx.mock:
+            route = respx.get(url__regex=r".*").mock(
+                return_value=httpx.Response(200, json=page([]))
+            )
+            with pytest.raises(ValueError, match="cannot contain"):
+                get_project_endpoint("../../danger", "sites", client=auth_client)
+            assert not route.called
+
+    def test_an_empty_token_raises_before_requesting(self):
+        with respx.mock:
+            route = respx.get(project_url("p1", "sites")).mock(
+                return_value=httpx.Response(200, json=page(sites(1)))
+            )
+            with pytest.raises(AuthenticationError):
+                get_project_sites("p1", token="")
+            assert not route.called
+
+    def test_a_traversing_default_from_the_environment_raises(self, monkeypatch, auth_client):
+        monkeypatch.setenv(DEFAULT_PROJECT_ENV_VAR, "../../danger")
+
+        with pytest.raises(ValueError, match="cannot contain"):
+            get_project_sites(client=auth_client)

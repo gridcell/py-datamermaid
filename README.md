@@ -64,9 +64,9 @@ Set a default project once to leave it out of every later call:
 
 ```python
 datamermaid.set_default_project("00673bec-...")
-datamermaid.get_project_sites(token="...")     # uses the default project
-datamermaid.get_default_project()              # ['00673bec-...']
-datamermaid.set_default_project(None)          # clear it
+datamermaid.get_project_sites(token="...")  # uses the default project
+datamermaid.get_default_project()  # ['00673bec-...']
+datamermaid.set_default_project(None)  # clear it
 ```
 
 The default is also read from the `MERMAID_DEFAULT_PROJECT` environment

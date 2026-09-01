@@ -107,7 +107,8 @@ def as_project_ids(project: ProjectLike) -> list[str]:
     ValueError
         If ``project`` holds no usable id — including a frame without an ``id``
         column and an empty input, both of which are caller mistakes rather
-        than requests for zero projects.
+        than requests for zero projects — or if an id contains ``/``, which
+        would rewrite the request path.
     """
     ids = _collect_ids(project)
     if not ids:
@@ -129,7 +130,13 @@ def _collect_ids(project: Any) -> list[str]:
 
     if isinstance(project, str):
         stripped = project.strip()
-        return [stripped] if stripped else []
+        if not stripped:
+            return []
+        if "/" in stripped:
+            # Ids are interpolated into `projects/{id}/{endpoint}/`, so a slash
+            # would silently rewrite the request path.
+            raise ValueError(f"`{stripped}` is not a valid project id: ids cannot contain `/`.")
+        return [stripped]
 
     if isinstance(project, Mapping):
         if "id" not in project:
@@ -202,7 +209,9 @@ def _resolve_project(project: ProjectLike | None) -> list[str]:
 
     default = get_default_project()
     if default:
-        return default
+        # Re-validate: a default read from the environment has not been through
+        # `as_project_ids`.
+        return as_project_ids(default)
 
     raise ValueError(
         "No project given and no default project set. Pass `project=`, or call "
@@ -289,7 +298,7 @@ def get_project_endpoint(
 
     frames: list[pd.DataFrame] = []
     with _authenticated_client(client, token) as api:
-        if api.token is None:
+        if not api.token:
             raise AuthenticationError(
                 f"`{endpoint}` is a project endpoint and requires authentication. "
                 "Pass `token=`, or set an authenticated client with "
@@ -317,8 +326,18 @@ def _concat(frames: Sequence[pd.DataFrame], *, columns: Sequence[str] | None) ->
         # Keep the requested schema visible even when nothing came back.
         return pd.DataFrame(columns=[PROJECT_COLUMN, *(columns or ())])
     if len(populated) == 1:
-        return populated[0]
-    return pd.concat(populated, ignore_index=True)
+        result = populated[0]
+    else:
+        result = pd.concat(populated, ignore_index=True)
+
+    if columns is not None:
+        # Projects can return different field subsets, so concatenating orders
+        # columns by first appearance; restore the requested order over every
+        # column that showed up somewhere.
+        present = [column for column in columns if column in result.columns]
+        result = result[[PROJECT_COLUMN, *present]]
+
+    return result
 
 
 def get_project_sites(
