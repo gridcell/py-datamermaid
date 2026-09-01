@@ -183,21 +183,46 @@ The valid methods are `fishbelt`, `benthiclit`, `benthicpit`, `benthicpqt`,
 `habitatcomplexity`, `bleaching`, and `macroinvertebrate`; the valid data
 levels are `observations`, `sampleunits`, and `sampleevents`. Either argument
 also takes a list, or `"all"`. Asking for more than one combination returns a
-nested `{method: {data: DataFrame}}` dict instead of a single frame:
+nested `{method: {data: DataFrame}}` dict instead of a single frame, keyed in
+the order the methods and levels are listed above however you asked for them:
 
 ```python
 fishbelt = datamermaid.get_project_data("00673bec-...", "fishbelt", "all")
 fishbelt["fishbelt"]["sampleunits"]
+
+everything = datamermaid.get_project_data("00673bec-...", "all", "all")
+everything["macroinvertebrate"]["sampleevents"]
 ```
 
-`limit` truncates the rows returned per project, and `covariates=True` asks
-MERMAID for its derived site covariates alongside the survey data. An invalid
-method or data level raises `ValueError` naming the valid options, before any
-request is made.
+Bleaching observations are the one combination MERMAID splits across two
+endpoints — colonies bleached and percent cover — so they come back as two
+named frames rather than one, the same split mermaidr returns as a named list:
 
-Only `fishbelt` can be fetched so far; the other methods raise
-`NotImplementedError`. The endpoint mapping is complete for every method and is
-exposed as `datamermaid.construct_endpoints()`.
+```python
+bleaching = datamermaid.get_project_data("00673bec-...", "bleaching", "observations")
+bleaching["colonies_bleached"]
+bleaching["percent_cover"]
+```
+
+That pair takes the place of a frame wherever one would otherwise sit, so it is
+what the `"observations"` entry holds inside the nested dict too. Every other
+method and level is a single frame:
+
+| Request | Result |
+| --- | --- |
+| one method, one level | a `DataFrame` |
+| one method, one level, `bleaching`/`observations` | `{"colonies_bleached": df, "percent_cover": df}` |
+| several methods or levels | `{method: {data: <either of the above>}}` |
+
+`limit` truncates the rows returned per project (per endpoint, so both
+bleaching observation frames are truncated), and `covariates=True` asks MERMAID
+for its derived site covariates alongside the survey data. A project with no
+data for a method gives an empty frame rather than an error. An invalid method
+or data level raises `ValueError` naming the valid options, before any request
+is made.
+
+The endpoint mapping itself is exposed as `datamermaid.construct_endpoints()`,
+which is pure and needs no login.
 
 ## Importing data
 

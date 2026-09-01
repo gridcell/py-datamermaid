@@ -1,0 +1,4 @@
+project,tags,country,site,latitude,longitude,reef_type,reef_zone,reef_exposure,management,sample_date,depth,quadrat_size,observers,count_total,count_genera,percent_normal,percent_pale,percent_bleached,percent_hard_avg,percent_soft_avg,percent_algae_avg
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,fore reef,exposed,Nasue Tabu,2018-05-14,7.0,1.0,Alice Waqa,27,2,74.07,14.81,11.11,41.5,11.0,22.5
+Kubulau Reefs,WCS Fiji,Fiji,Nasue,-17.0384,178.9945,fringing,back reef,sheltered,Nasue Tabu,2018-05-14,5.5,1.0,Alice Waqa,19,3,63.16,21.05,15.79,33.0,14.0,28.0
+Kubulau Reefs,WCS Fiji,Fiji,Namena,-17.1122,179.0871,patch,fore reef,exposed,Namena Reserve,2018-05-16,9.0,1.0,Beni Rova,13,1,38.46,30.77,30.77,52.0,8.0,15.0

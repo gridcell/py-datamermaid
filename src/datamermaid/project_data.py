@@ -10,8 +10,9 @@ publishes and is pure, so it can be checked without touching the network.
 :func:`get_project_data` fetches the resulting endpoints with a bearer token and
 parses each response with :func:`pandas.read_csv`.
 
-Only ``fishbelt`` is wired up at the fetch layer for now; the other methods
-raise :class:`NotImplementedError` once their endpoints have been resolved.
+Every method and level can be fetched.  Bleaching observations are the one
+combination that spans two endpoints, so they come back as two named frames --
+see :data:`OBSERVATION_KEYS`.
 
 Projects are named the same way as for the other project endpoints -- see
 :mod:`datamermaid.project_endpoints`, which owns the coercion and the default
@@ -31,6 +32,7 @@ from .project_endpoints import ProjectLike, _resolve_project
 __all__ = [
     "DATA_LEVELS",
     "METHODS",
+    "OBSERVATION_KEYS",
     "PROJECT_COLUMN",
     "construct_endpoints",
     "get_project_data",
@@ -69,13 +71,26 @@ METHODS: tuple[str, ...] = tuple(METHOD_SLUGS)
 #: Valid ``data`` values, in the order they are returned.
 DATA_LEVELS: tuple[str, ...] = tuple(DATA_SLUGS)
 
-#: Methods :func:`get_project_data` can currently fetch.
-SUPPORTED_METHODS: frozenset[str] = frozenset({"fishbelt"})
+#: Endpoint segment -> the key its frame gets when an aggregation level spans
+#: more than one endpoint.  Only bleaching observations do, and mermaidr names
+#: the two halves the same way.
+OBSERVATION_KEYS: dict[str, str] = {
+    "obscoloniesbleacheds": "colonies_bleached",
+    "obsquadratbenthicpercents": "percent_cover",
+}
 
 #: Column added to identify the project when several are requested at once.
 #: MERMAID's own CSVs already carry a ``project`` column holding the project
 #: *name*, so the identifier gets its own column rather than colliding with it.
 PROJECT_COLUMN = "project_id"
+
+#: One aggregation level's result: a frame, or -- for bleaching observations --
+#: one frame per endpoint, keyed by :data:`OBSERVATION_KEYS`.
+LevelData = pd.DataFrame | dict[str, pd.DataFrame]
+
+#: What :func:`get_project_data` returns: a single level's data when one method
+#: and one level were asked for, otherwise ``{method: {data: LevelData}}``.
+ProjectData = LevelData | dict[str, dict[str, LevelData]]
 
 
 def _choices(valid: Iterable[str]) -> str:
@@ -184,6 +199,15 @@ def _concat(frames: list[pd.DataFrame], project_ids: list[str]) -> pd.DataFrame:
     return pd.concat(labelled, ignore_index=True)
 
 
+def _by_endpoint(paths: list[str], frames: list[pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """Name the frames of an aggregation level that spans several endpoints."""
+    keyed: dict[str, pd.DataFrame] = {}
+    for path, frame in zip(paths, frames, strict=True):
+        slug = path.rsplit("/", 1)[-1]
+        keyed[OBSERVATION_KEYS.get(slug, slug)] = frame
+    return keyed
+
+
 def get_project_data(
     project: ProjectLike | None = None,
     method: Any = "fishbelt",
@@ -193,7 +217,7 @@ def get_project_data(
     *,
     client: MermaidClient | None = None,
     token: str | None = None,
-) -> pd.DataFrame | dict[str, dict[str, pd.DataFrame]]:
+) -> ProjectData:
     """Get survey data for one or more MERMAID projects.
 
     Requires a login.  The token comes from ``token``, from the
@@ -210,8 +234,6 @@ def get_project_data(
         the project each row came from.
     method:
         Survey method: one of :data:`METHODS`, ``"all"``, or a list of those.
-        Only ``"fishbelt"`` can be fetched today; the rest raise
-        :class:`NotImplementedError`.
     data:
         Aggregation level: one of :data:`DATA_LEVELS`, ``"all"``, or a list of
         those.
@@ -234,13 +256,17 @@ def get_project_data(
         requested.  Otherwise a nested dict, ``{method: {data: DataFrame}}``,
         keyed in the order of :data:`METHODS` and :data:`DATA_LEVELS`.
 
+        Bleaching observations are the exception: they live at two endpoints,
+        so that level's value is a ``{"colonies_bleached": DataFrame,
+        "percent_cover": DataFrame}`` dict -- the same split mermaidr returns
+        as a named list.  It takes the place of a frame wherever one would
+        otherwise sit, including inside the nested dict.
+
     Raises
     ------
     ValueError
         If ``method``, ``data``, or ``limit`` is invalid, or if no project was
         given and no default is set.  Nothing is requested in that case.
-    NotImplementedError
-        If a method other than ``"fishbelt"`` is requested.
 
     Examples
     --------
@@ -248,35 +274,36 @@ def get_project_data(
     >>> datamermaid.get_project_data("abc-123", "fishbelt", "sampleevents")  # doctest: +SKIP
     >>> everything = datamermaid.get_project_data("abc-123", data="all")  # doctest: +SKIP
     >>> everything["fishbelt"]["observations"]  # doctest: +SKIP
+
+    Bleaching observations come back as two frames:
+
+    >>> bleaching = datamermaid.get_project_data(
+    ...     "abc-123", "bleaching", "observations"
+    ... )  # doctest: +SKIP
+    >>> bleaching["colonies_bleached"]  # doctest: +SKIP
+    >>> bleaching["percent_cover"]  # doctest: +SKIP
     """
     limit = check_limit(limit)
     endpoints = construct_endpoints(method, data)
     project_ids = _resolve_project(project)
 
-    unsupported = [name for name in endpoints if name not in SUPPORTED_METHODS]
-    if unsupported:
-        raise NotImplementedError(
-            f"Fetching {', '.join(unsupported)} data is not implemented yet; "
-            f"only {', '.join(sorted(SUPPORTED_METHODS))} is supported so far."
-        )
-
     params = {"covariates": "true"} if covariates else None
 
-    results: dict[str, dict[str, pd.DataFrame]] = {}
+    results: dict[str, dict[str, LevelData]] = {}
     with client_context(client, token) as api:
         for method_name, levels in endpoints.items():
             results[method_name] = {}
             for data_name, paths in levels.items():
-                if len(paths) > 1:
-                    raise NotImplementedError(
-                        f"{method_name} {data_name} spans several endpoints "
-                        f"({', '.join(paths)}); combining them is not implemented yet."
-                    )
-                frames = [
-                    _fetch(api, project_id, paths[0], params=params, limit=limit)
-                    for project_id in project_ids
-                ]
-                results[method_name][data_name] = _concat(frames, project_ids)
+                frames: list[pd.DataFrame] = []
+                for path in paths:
+                    per_project = [
+                        _fetch(api, project_id, path, params=params, limit=limit)
+                        for project_id in project_ids
+                    ]
+                    frames.append(_concat(per_project, project_ids))
+                results[method_name][data_name] = (
+                    frames[0] if len(frames) == 1 else _by_endpoint(paths, frames)
+                )
 
     only_method = next(iter(results))
     if len(results) == 1 and len(results[only_method]) == 1:
