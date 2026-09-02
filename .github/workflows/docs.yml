@@ -24,7 +24,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.12"
@@ -38,17 +38,56 @@ jobs:
         run: uv run --extra docs mkdocs build --strict
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
-  # Publishing needs Settings -> Pages -> "Build and deployment" -> Source set
-  # to "GitHub Actions"; without it this job fails and the build job above
-  # still gates every pull request.
+  # `deploy-pages` can only create a deployment once Settings -> Pages ->
+  # "Build and deployment" -> Source is set to "GitHub Actions"; until then the
+  # API answers 404 and a red deploy job is the only hint.  `enablement: true`
+  # sets it from here instead, which needs `pages: write` -- hence a job of its
+  # own, so the build job's token stays read-only on pull request branches.
+  # Where an organisation withholds that permission the step fails, and
+  # `pages_ready` below skips the deploy with a warning rather than failing the
+  # run: a one-time settings gap is not a broken build.  Either way the
+  # `mkdocs build --strict` gate above still runs on every pull request.
+  configure:
+    name: Configure Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+    outputs:
+      # `outcome` is the step's result before `continue-on-error` masks it.
+      pages_ready: ${{ steps.pages.outcome }}
+    steps:
+      - id: pages
+        uses: actions/configure-pages@v6
+        continue-on-error: true
+        with:
+          enablement: true
+      - name: Report that Pages is not enabled
+        if: steps.pages.outcome != 'success'
+        env:
+          SETTINGS_URL: ${{ github.server_url }}/${{ github.repository }}/settings/pages
+        run: |
+          echo "::warning title=Docs not published::GitHub Pages is not enabled for this repository and this run could not enable it. Set Source to \"GitHub Actions\" at $SETTINGS_URL, then re-run this workflow."
+          {
+            echo "### Docs not published"
+            echo
+            echo "\`actions/configure-pages\` could not enable GitHub Pages, so the"
+            echo "deploy was skipped.  The site was built and uploaded as an artifact."
+            echo
+            echo "Set **Build and deployment -> Source** to **GitHub Actions** at"
+            echo "<$SETTINGS_URL>, then re-run this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Deploy
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      && needs.configure.outputs.pages_ready == 'success'
+    needs: [build, configure]
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -58,4 +97,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
