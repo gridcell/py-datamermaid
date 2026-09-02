@@ -675,6 +675,13 @@ missing or half-installed dependency into an actionable message.
 pin or an ungated Pages deploy fails the suite. CI runs the same commands on
 Python 3.10 and 3.12.
 
+User-visible change goes in
+[CHANGELOG.md](https://github.com/gridcell/py-datamermaid/blob/main/CHANGELOG.md),
+which follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/): add new
+or renamed functions, behaviour and argument changes, bug fixes and breaking
+changes under `## [Unreleased]` as you go, and they become a version section at
+release.
+
 ## License
 
 MIT, like mermaidr. See

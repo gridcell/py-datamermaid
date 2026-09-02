@@ -3,7 +3,8 @@
 The README's migration table and ``get_project_data()`` matrix are parsed here
 and compared with the package, so a function renamed or a method added without
 updating the docs fails the suite.  ``examples/quickstart.py`` is executed
-end-to-end against its mock transport.
+end-to-end against its mock transport.  ``CHANGELOG.md`` is checked for an
+``[Unreleased]`` section and one for the current ``__version__``.
 
 The MkDocs site in ``docs/`` gets the same treatment, minus anything that would
 need mkdocs installed: ``mkdocs.yml`` and the pages under ``docs/`` are read as
@@ -24,6 +25,7 @@ import datamermaid
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
 QUICKSTART = ROOT / "examples" / "quickstart.py"
 DOCS = ROOT / "docs"
 MKDOCS_YML = ROOT / "mkdocs.yml"
@@ -163,6 +165,21 @@ def test_quickstart_runs_offline(capsys):
 
     # The script must leave no process-wide state behind for other tests.
     assert datamermaid.get_default_project() is None
+
+
+def test_changelog_has_unreleased_and_the_current_version():
+    """A version bump without a changelog section for it fails the suite."""
+    changelog = CHANGELOG.read_text()
+    headings = re.findall(r"^## \[([^\]]+)\]", changelog, re.M)
+
+    assert "Unreleased" in headings, "CHANGELOG.md has no '## [Unreleased]' section"
+    assert datamermaid.__version__ in headings, (
+        f"CHANGELOG.md has no section for version {datamermaid.__version__}: {headings}"
+    )
+
+
+def test_readme_links_the_changelog(readme):
+    assert "CHANGELOG.md" in readme
 
 
 # --- The MkDocs site -------------------------------------------------------
