@@ -45,6 +45,13 @@ Issues = "https://github.com/gridcell/py-datamermaid/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/datamermaid"]
 
+[tool.uv]
+# `uv sync` installs datamermaid itself, editable, alongside its dependencies,
+# so `uv run pytest` sees the checkout rather than a release from PyPI.  The dev
+# extra above stays the single list of development dependencies; drive it with
+# `uv sync --extra dev` rather than duplicating it into a dependency group.
+package = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/datamermaid"]
 addopts = "-ra --strict-markers --doctest-modules"

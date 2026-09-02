@@ -212,6 +212,7 @@ def test_preflight_reports_a_package_that_is_not_installed(preflight):
     assert "definitely_not_a_module is not installed" in message
     assert sys.executable in message
     assert f"{sys.executable} -m pip install datamermaid" in message
+    assert "uv sync" in message, "the message offers pip but not the uv equivalent"
 
 
 def test_preflight_reports_a_package_whose_own_dependency_is_missing(preflight, tmp_path):
@@ -236,6 +237,27 @@ def test_preflight_reports_a_package_whose_own_dependency_is_missing(preflight, 
     assert "halfinstalled is installed for this interpreter" in message
     assert "not_a_real_idna, which is missing" in message
     assert f"{sys.executable} -m pip install --force-reinstall halfinstalled" in message
+    assert "uv sync" in message, "the message offers pip but not the uv equivalent"
+
+
+def test_preflight_offers_uv_wherever_it_offers_an_install(preflight):
+    """Both install messages name uv, and name it the same way.
+
+    The whole class of failure these messages describe is an example running
+    against a different environment than the one the package went into, which
+    is what ``uv run`` removes; the README says so, so the messages have to
+    agree with it.
+    """
+    messages = [
+        preflight._not_installed("httpx"),
+        preflight._broken_install("httpx", "idna", ImportError("No module named 'idna'")),
+    ]
+    for message in messages:
+        assert preflight._UV_ALTERNATIVE in message
+        assert "uv run examples/" in message
+        # The uv path is the alternative, not the headline: pip comes first.
+        assert message.index("-m pip install") < message.index("uv sync")
+        assert message.rindex("uv sync") < message.index(preflight.TROUBLESHOOTING)
 
 
 def test_preflight_reports_a_name_a_different_version_does_not_have(preflight):

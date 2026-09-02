@@ -139,9 +139,26 @@ ruff format --check .        # formatting
 python examples/quickstart.py  # README workflow against a mocked API
 ```
 
+Or with [uv](https://docs.astral.sh/uv/), which is what CI runs and which needs
+no pre-existing interpreter:
+
+```bash
+uv sync --extra dev          # .venv: the checkout (editable) + pytest, respx, ruff
+uv run --extra dev pytest
+uv run --extra dev ruff check .
+uv run --extra dev ruff format --check .
+uv run python examples/quickstart.py
+uv run --python 3.10 --extra dev pytest   # the other half of the CI matrix
+```
+
+`--extra dev` on `uv run` too: it syncs before running, and without the extra
+it may uninstall the dev tools. `uv.lock` and `.python-version` are gitignored
+on purpose — the pins are loose and the matrix is meant to vary them — so
+nothing here takes `--frozen`.
+
 CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
-`pytest` on Python 3.10 and 3.12. All three must pass; there is no network in
-tests, so never add a test that hits `api.datamermaid.org`.
+`pytest` under uv on Python 3.10 and 3.12. All three must pass; there is no
+network in tests, so never add a test that hits `api.datamermaid.org`.
 
 ## Architecture Overview
 

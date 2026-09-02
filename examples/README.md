@@ -4,6 +4,7 @@ Small, self-contained scripts, each one runnable on its own:
 
 ```bash
 python examples/01_public_projects.py
+uv run examples/01_public_projects.py   # with uv, from a checkout
 ```
 
 They are numbered so they can be read in order — public endpoints first, then
@@ -31,6 +32,15 @@ An example runs against whichever interpreter you invoke it with, so
 python -m venv .venv && source .venv/bin/activate   # optional, but the tidiest
 python -m pip install -e .          # or: python -m pip install datamermaid
 python examples/quickstart.py
+```
+
+[uv](https://docs.astral.sh/uv/) makes the question moot, since `uv run` uses
+the environment it just built rather than whatever `python` happens to mean —
+and it will fetch an interpreter if there is none:
+
+```bash
+uv sync
+uv run examples/quickstart.py
 ```
 
 `quickstart.py` answers every request from an in-process mock transport, so it
@@ -70,6 +80,12 @@ Without that check the same situation surfaces as a traceback ending in
 and with no mention of what to install. [`_preflight.py`](_preflight.py) is the
 helper that writes those messages; it is not an example, and it deliberately
 imports nothing beyond the standard library.
+
+All three are ways of running an example against an environment that is not the
+one the package was installed into, so all three go away under `uv run`, which
+syncs the environment before it runs the script. From a checkout of this
+repository, `uv sync && uv run examples/quickstart.py` rebuilds `.venv` from
+`pyproject.toml` and cannot get out of step with it.
 
 ## Credentials
 
