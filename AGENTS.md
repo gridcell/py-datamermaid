@@ -203,7 +203,11 @@ Python versions `pyproject.toml` advertises.
 `datamermaid` is a port of the R package [mermaidr](https://github.com/data-mermaid/mermaidr):
 each `mermaid_*` function maps to a same-named function without the prefix, and
 tibbles become `pandas.DataFrame`s. The README's migration table is the
-authoritative list; `tests/test_docs.py` checks it against `__all__`.
+authoritative list; `tests/test_docs.py` checks it against `__all__`, and
+`tests/test_parity.py` is the R-side complement -- a hardcoded snapshot of
+mermaidr's NAMESPACE exports and of the reference tables
+`mermaid_get_reference()` accepts, so a new mermaidr release with no port here
+fails the suite.  Updating it for a mermaidr release is a one-file edit.
 
 ```
 src/datamermaid/
