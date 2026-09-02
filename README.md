@@ -635,7 +635,9 @@ is one `:::` directive per module, rendered by
 [mkdocstrings](https://mkdocstrings.github.io) from the numpy-style docstrings,
 so it cannot drift from the code. `--strict` fails on a broken link or an
 identifier that does not resolve. Pushes to `main` publish the result to GitHub
-Pages via `.github/workflows/docs.yml`.
+Pages via `.github/workflows/docs.yml`, which enables Pages for the repository
+on its own the first time it runs; if it is not allowed to, it says so in the
+run summary and skips publishing instead of failing.
 
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so
@@ -644,8 +646,10 @@ parses everything in
 [`examples/`](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md)
 — the scripts there talk to the real API, so they are checked for drift rather
 than executed — and exercises `examples/_preflight.py`, the helper that turns a
-missing or half-installed dependency into an actionable message. CI runs the
-same commands on Python 3.10 and 3.12.
+missing or half-installed dependency into an actionable message.
+`tests/test_workflows.py` reads the workflows themselves, so a Node 20 action
+pin or an ungated Pages deploy fails the suite. CI runs the same commands on
+Python 3.10 and 3.12.
 
 ## License
 

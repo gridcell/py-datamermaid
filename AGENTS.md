@@ -182,8 +182,13 @@ CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
 `pytest` under uv on Python 3.10 and 3.12. All three must pass; there is no
 network in tests, so never add a test that hits `api.datamermaid.org`.
 `.github/workflows/docs.yml` is separate: it builds the site with `--strict` on
-every pull request and, on `main`, deploys it to GitHub Pages.  That deploy
-needs the repository's Settings -> Pages source set to "GitHub Actions".
+every pull request and, on `main`, deploys it to GitHub Pages.  Publishing needs
+Settings -> Pages -> Source set to "GitHub Actions"; its `configure` job sets
+that itself with `actions/configure-pages` (`enablement: true`), and if the
+token is not allowed to, the deploy is skipped with a warning in the run summary
+rather than failing with a 404.  `tests/test_workflows.py` is the drift guard
+for both workflows: it keeps every `actions/*` pin on a Node 24 major and keeps
+the deploy gated on that `configure` job.
 
 ## Architecture Overview
 
