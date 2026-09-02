@@ -71,17 +71,27 @@ uv sync --extra notebook
 uv run --extra notebook marimo edit examples/09_marimo_notebook.py
 ```
 
+The extra asks for marimo 0.13.15 or newer, which is the first release that
+runs the notebook correctly as a plain script: the cells stand down with
+`mo.stop()` while there is no token, and older marimos either let that escape
+as a traceback or ran the stopped cell's dependants anyway.
+
 Skip the extra and `python examples/09_marimo_notebook.py` says
 `ModuleNotFoundError: No module named 'marimo'`, which is the one import in
 `examples/` without the guard described below: marimo's own tooling looks for a
 top-level `import marimo` and cannot save over a file that has none, so it has
 to sit outside a `try`. A missing `datamermaid` does report itself the usual
-way, naming `'datamermaid[notebook]'` as the install.
+way, naming `'datamermaid[notebook]'` as the install — under `python`, at
+least; see below.
 
 marimo opens the notebook with a warning that it "has errors": the import guard
 every example here carries is module-level code, which a notebook file is not
-supposed to have. It runs fine, but saving from the editor regenerates the file
-from its cells and drops the guard — the docstring survives.
+supposed to have. Nothing breaks, because `marimo edit` and `marimo run` load a
+notebook from its parse tree and never execute module-level code — which is
+also why the guard only speaks up under `python examples/09_marimo_notebook.py`,
+and a missing `datamermaid` reports itself from the first cell instead. Saving
+from the editor regenerates the file from its cells and drops the guard; the
+docstring survives.
 
 ### Troubleshooting
 
@@ -144,8 +154,9 @@ No example hardcodes a token, and none prints more than a masked prefix of one.
 
 The project-scoped examples (06, 07, 09) need a project id. They read
 `MERMAID_EXAMPLE_PROJECT` if it is set, and otherwise use the first project on
-your account — the notebook preselects it in its dropdown — so nothing here
-depends on a UUID that may go away:
+your account — the notebook puts the named project in its dropdown, whether or
+not it is one of your own, and preselects it — so nothing here depends on a
+UUID that may go away:
 
 ```bash
 export MERMAID_EXAMPLE_PROJECT="00673bec-..."

@@ -15,8 +15,9 @@ token is ever shown.
 
 Needs: marimo, which is not a dependency of ``datamermaid`` -- install it with
 ``python -m pip install 'datamermaid[notebook]'`` -- plus a network connection
-and a MERMAID login.  Set ``MERMAID_EXAMPLE_PROJECT`` to a project id to
-preselect it in the dropdown; otherwise the first of your own projects is used.
+and a MERMAID login.  Set ``MERMAID_EXAMPLE_PROJECT`` to a project id to put it
+in the dropdown and preselect it, whether or not it is one of your own;
+otherwise the first project on the account is used.
 
 Run it with::
 
@@ -37,10 +38,13 @@ save; the import guard under it does not, and is worth putting back.
 import marimo
 
 try:
-    # Imported here only so that a missing install is reported by the handler
-    # below rather than from inside the first cell that needs it.  A cell gets
-    # its own namespace and cannot see anything bound at module level, so every
-    # cell imports for itself what it uses; this import is purely the check.
+    # The check every example in this directory opens with, and it fires in the
+    # one mode that runs this file as a module: `python 09_marimo_notebook.py`.
+    # `marimo edit` and `marimo run` read the notebook off its parse tree
+    # without executing anything at module level, so under those a missing
+    # datamermaid still surfaces from the `imports` cell.  A cell gets its own
+    # namespace and cannot see anything bound out here, so every cell imports
+    # for itself what it uses; this import is purely the check.
     import datamermaid  # noqa: F401
 except ImportError as exc:  # explain what to install, instead of a deep traceback
     import sys
@@ -161,19 +165,27 @@ def project_list(datamermaid, me, mo, present):
 
 @app.cell
 def project_picker(PROJECT_ENV_VAR, mo, os, projects):
-    mo.stop(
-        projects.empty,
-        mo.md(f"*No projects on this account; set `{PROJECT_ENV_VAR}` to one you can read.*"),
-    )
-
     # Label -> id, which is what the dropdown hands back through `.value`.  The
     # id goes in the label too, since two projects may share a name.
     options = {
         f"{name} ({project_id[:8]})": project_id
         for name, project_id in zip(projects["name"], projects["id"], strict=True)
     }
+
+    # A named project wins, the way it does in examples 06 and 07 -- including
+    # when it is not one of your own, since being able to read a project is not
+    # the same as belonging to it.  Unknown ids join the dropdown rather than
+    # replace it, so the account's projects stay one click away.
     chosen = os.environ.get(PROJECT_ENV_VAR, "").strip()
     preselected = [label for label, project_id in options.items() if project_id == chosen]
+    if chosen and not preselected:
+        preselected = [f"{PROJECT_ENV_VAR} ({chosen[:8]})"]
+        options = {preselected[0]: chosen, **options}
+
+    mo.stop(
+        not options,
+        mo.md(f"*No projects on this account; set `{PROJECT_ENV_VAR}` to one you can read.*"),
+    )
 
     project = mo.ui.dropdown(
         options=options,
