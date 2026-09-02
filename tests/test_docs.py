@@ -30,8 +30,8 @@ MKDOCS_YML = ROOT / "mkdocs.yml"
 PACKAGE = ROOT / "src" / "datamermaid"
 
 #: mermaidr's exports, from its NAMESPACE, that have a datamermaid counterpart.
-#: ``mermaid_get_classification_labelmappings`` and ``mermaid_get_gfcr_report``
-#: are the two that do not (and ``%>%`` is not a function to port).
+#: ``mermaid_get_classification_labelmappings`` is the only one that does not
+#: (and ``%>%`` is not a function to port).
 PORTED_MERMAIDR_FUNCTIONS = {
     "mermaid_auth",
     "mermaid_token",
@@ -58,6 +58,7 @@ PORTED_MERMAIDR_FUNCTIONS = {
     "mermaid_import_bulk_validate",
     "mermaid_import_bulk_submit",
     "mermaid_import_bulk_edit",
+    "mermaid_get_gfcr_report",
 }
 
 

@@ -26,6 +26,7 @@ place works, but the top-level package is the supported spelling.
 | [`datamermaid.project_data`](project-data.md) | Survey data by method and aggregation level |
 | [`datamermaid.endpoints`](endpoints.md) | Global unauthenticated endpoints and reference tables |
 | [`datamermaid.import_`](import.md) | The write path: templates, option checks, ingest, bulk actions |
+| [`datamermaid.reports`](reports.md) | Generated reports (GFCR), as a dict of frames |
 | [`datamermaid.client`](client.md) | `MermaidClient`, the HTTP layer every call goes through |
 | [`datamermaid.exceptions`](exceptions.md) | The exception hierarchy |
 | [`datamermaid.utils`](utils.md) | Records to `DataFrame`, list-column collapsing |
