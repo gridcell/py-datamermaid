@@ -43,10 +43,23 @@ dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5", "marimo>=0.13.15"]
 # wrong -- up to 0.12 that escapes as a MarimoStopError traceback, and through
 # 0.13.0 the stopped cell's dependants run anyway.
 notebook = ["marimo>=0.13.15"]
+# The documentation site (mkdocs.yml, docs/).  Deliberately outside `dev`: the
+# test suite never imports mkdocs, and keeping it separate leaves the offline
+# Python matrix free of a dependency tree it has no use for.  mkdocstrings
+# renders the numpy-style docstrings the package already carries, so the API
+# reference is generated rather than written.  mkdocs is capped below 2.0,
+# which drops the plugin system this configuration is built on; ruff is here
+# only because mkdocstrings uses it to format the signatures it renders.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+    "ruff>=0.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/gridcell/py-datamermaid"
-Documentation = "https://github.com/gridcell/py-datamermaid#readme"
+Documentation = "https://gridcell.github.io/py-datamermaid/"
 Source = "https://github.com/gridcell/py-datamermaid"
 Issues = "https://github.com/gridcell/py-datamermaid/issues"
 "MERMAID" = "https://datamermaid.org"

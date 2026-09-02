@@ -10,6 +10,11 @@ back as [pandas](https://pandas.pydata.org) `DataFrame`s.
 The workflow is mermaidr's: **authenticate → find projects → pull project
 data → pull reference data**. Public data needs no account.
 
+📖 **[Documentation](https://gridcell.github.io/py-datamermaid/)**: this README
+with search and navigation, plus a
+[reference](https://gridcell.github.io/py-datamermaid/api/) for every public
+function, generated from the docstrings.
+
 - [Install](#install)
 - [Authentication](#authentication)
 - [Quickstart](#quickstart)
@@ -55,9 +60,9 @@ CI runs the test suite on 3.10 and 3.12, under uv.
 interpreter you name, whereas `pip` may belong to another one — the usual
 reason an import fails for a package that looks installed. The examples check
 for this and say so; see
-[Troubleshooting](examples/README.md#troubleshooting) if one of them reports a
-missing module. `uv run` sidesteps the question entirely: it runs whatever it
-just installed.
+[Troubleshooting](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md#troubleshooting)
+if one of them reports a missing module. `uv run` sidesteps the question
+entirely: it runs whatever it just installed.
 
 ## Authentication
 
@@ -136,7 +141,8 @@ with MermaidClient(token="eyJhbGciOi...") as client:
 
 `set_default_client()` swaps the client every module-level function uses,
 which is how to point the package at another API root or, as
-[`examples/quickstart.py`](examples/quickstart.py) does, at a mock transport.
+[`examples/quickstart.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/quickstart.py)
+does, at a mock transport.
 
 ## Quickstart
 
@@ -177,8 +183,8 @@ datamermaid.get_project_data(method="benthicpit", data="sampleunits")
 fish_families = datamermaid.get_reference("fishfamilies")
 ```
 
-[`examples/quickstart.py`](examples/quickstart.py) runs exactly this against a
-mocked API, so it can be executed offline:
+[`examples/quickstart.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/quickstart.py)
+runs exactly this against a mocked API, so it can be executed offline:
 
 ```bash
 python examples/quickstart.py
@@ -186,10 +192,10 @@ python examples/quickstart.py
 
 ## Examples
 
-[`examples/`](examples/README.md) holds a numbered set of small runnable
-scripts, one per capability — public project listing and search, the three
-ways to authenticate, your own projects, project-scoped endpoints, survey
-data, and error handling:
+[`examples/`](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md)
+holds a numbered set of small runnable scripts, one per capability — public
+project listing and search, the three ways to authenticate, your own projects,
+project-scoped endpoints, survey data, and error handling:
 
 ```bash
 python examples/01_public_projects.py   # public data; no account needed
@@ -197,10 +203,11 @@ python examples/03_authenticate.py      # sign in and cache a token
 python examples/07_project_data.py      # survey data, by method and level
 ```
 
-The last of them, [`09_marimo_notebook.py`](examples/09_marimo_notebook.py), is
-a [marimo](https://marimo.io) notebook rather than a script: a sign-in button
-and a project dropdown, with the cells that read them refetching on their own.
-marimo is an extra, since nothing in the package needs it:
+The last of them,
+[`09_marimo_notebook.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/09_marimo_notebook.py),
+is a [marimo](https://marimo.io) notebook rather than a script: a sign-in
+button and a project dropdown, with the cells that read them refetching on
+their own. marimo is an extra, since nothing in the package needs it:
 
 ```bash
 python -m pip install 'datamermaid[notebook]'
@@ -215,14 +222,15 @@ authenticates nobody — start it with `MERMAID_API_TOKEN` set and it shows that
 account's data to anyone who reaches the port; leave the variable unset and each
 visitor signs in for themselves.
 
-[`examples/README.md`](examples/README.md) indexes them and says which need a
-login. Only `quickstart.py` runs offline; the rest talk to the real API.
+[`examples/README.md`](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md)
+indexes them and says which need a login. Only `quickstart.py` runs offline;
+the rest talk to the real API.
 
 Each script verifies that `datamermaid` and its dependencies are importable
 before it does anything, so running one against an interpreter that lacks them
 prints what to install rather than a traceback from inside `httpx`. The cases
 and their fixes are in
-[Troubleshooting](examples/README.md#troubleshooting).
+[Troubleshooting](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md#troubleshooting).
 
 ## Finding projects
 
@@ -608,15 +616,38 @@ carries the same pin, so a checkout set up with `--extra dev` can open the
 notebook without a second sync. `notebook` on its own is for people who install
 the published package instead of the repository.
 
+The documentation site lives in `docs/` and is built by
+[MkDocs](https://www.mkdocs.org). It is a third extra, kept out of `dev` so the
+test matrix never installs it:
+
+```bash
+uv sync --extra docs
+uv run --extra docs mkdocs serve            # http://127.0.0.1:8000, live reload
+uv run --extra docs mkdocs build --strict   # what CI builds and deploys
+```
+
+`docs/index.md` and `docs/examples.md` are one-line includes of this README and
+`examples/README.md`, so the prose has a single home: **edit the READMEs, not
+the pages under `docs/`.** That is also why the links above point at
+`github.com` rather than being repo-relative: a relative link breaks once the
+file is inlined into a page somewhere else. The API reference under `docs/api/`
+is one `:::` directive per module, rendered by
+[mkdocstrings](https://mkdocstrings.github.io) from the numpy-style docstrings,
+so it cannot drift from the code. `--strict` fails on a broken link or an
+identifier that does not resolve. Pushes to `main` publish the result to GitHub
+Pages via `.github/workflows/docs.yml`.
+
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so
 changes to either need to be made in both places. `tests/test_examples.py`
-parses everything in [`examples/`](examples/README.md) — the scripts there talk
-to the real API, so they are checked for drift rather than executed — and
-exercises `examples/_preflight.py`, the helper that turns a missing or
-half-installed dependency into an actionable message. CI runs the same commands
-on Python 3.10 and 3.12.
+parses everything in
+[`examples/`](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md)
+— the scripts there talk to the real API, so they are checked for drift rather
+than executed — and exercises `examples/_preflight.py`, the helper that turns a
+missing or half-installed dependency into an actionable message. CI runs the
+same commands on Python 3.10 and 3.12.
 
 ## License
 
-MIT, like mermaidr. See [LICENSE](LICENSE).
+MIT, like mermaidr. See
+[LICENSE](https://github.com/gridcell/py-datamermaid/blob/main/LICENSE).

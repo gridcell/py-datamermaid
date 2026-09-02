@@ -1,0 +1,61 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Separate from CI's group so a docs run and a test run do not cancel each
+  # other, and `cancel-in-progress: false` so a deploy already uploading to
+  # Pages is allowed to finish.
+  group: docs-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Same uv-provides-the-interpreter setup as ci.yml, and setup-uv is pinned by
+# commit for the same reason.  The docs are built with the `docs` extra, which
+# is deliberately not part of `dev`: nothing in the test matrix needs mkdocs.
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install
+        run: uv sync --extra docs
+      # --strict turns a broken link, an unrecognised nav entry or an
+      # unresolvable mkdocstrings identifier into a failure, so this gates PRs
+      # as well as producing what gets deployed.
+      - name: mkdocs build --strict
+        run: uv run --extra docs mkdocs build --strict
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # Publishing needs Settings -> Pages -> "Build and deployment" -> Source set
+  # to "GitHub Actions"; without it this job fails and the build job above
+  # still gates every pull request.
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

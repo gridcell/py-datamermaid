@@ -28,3 +28,6 @@ htmlcov/
 
 # direnv (may hold a MERMAID_API_TOKEN)
 .envrc
+
+# mkdocs build output (mkdocs build; see .github/workflows/docs.yml)
+site/

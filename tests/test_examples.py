@@ -538,8 +538,16 @@ def test_example_only_names_extras_that_exist(path: Path):
 
 
 def test_examples_readme_indexes_every_script():
+    """The index links every script, by a link target ending in its filename.
+
+    The targets are absolute GitHub URLs rather than plain filenames because
+    docs/index.md and docs/examples.md inline these READMEs into the
+    documentation site, where a relative link would resolve against the wrong
+    place -- see ``tests/test_docs.py``.
+    """
     index = (EXAMPLES / "README.md").read_text()
-    missing = [path.name for path in EXAMPLE_SCRIPTS if f"({path.name})" not in index]
+    linked = {target.rsplit("/", 1)[-1] for target in re.findall(r"\]\(([^)]+)\)", index)}
+    missing = [path.name for path in EXAMPLE_SCRIPTS if path.name not in linked]
     assert not missing, f"examples/README.md does not link: {missing}"
 
 

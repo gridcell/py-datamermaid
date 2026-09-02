@@ -12,16 +12,16 @@ signing in, then everything that needs a login.
 
 | Example | Shows | Login |
 | --- | --- | --- |
-| [`quickstart.py`](quickstart.py) | The README walk-through end to end, against a mocked API — runs offline, no account | no |
-| [`01_public_projects.py`](01_public_projects.py) | `get_projects()`, `limit`, the columns, collapsed list fields | no |
-| [`02_search_projects.py`](02_search_projects.py) | `search_projects()` by name/country/tag, `countries()` | no |
-| [`03_authenticate.py`](03_authenticate.py) | `authenticate()` in a browser, the device-code flow, the token cache, `get_token()`, `clear_cached_token()` | signs you in |
-| [`04_token_from_env.py`](04_token_from_env.py) | `MERMAID_API_TOKEN`, `token=` per call, one `MermaidClient` shared across calls | yes |
-| [`05_my_projects.py`](05_my_projects.py) | `get_me()`, `get_my_projects()`, `search_my_projects()` | yes |
-| [`06_project_endpoints.py`](06_project_endpoints.py) | `get_project_sites()`, `get_project_managements()`, `get_project_endpoint()`, `set_default_project()`, `as_project_ids()` | yes |
-| [`07_project_data.py`](07_project_data.py) | `get_project_data()` by method and level, `construct_endpoints()`, nested-dict results, covariates | yes |
-| [`08_error_handling.py`](08_error_handling.py) | `ValueError`, `MermaidAPIError`, `AuthenticationError`, `MermaidError` | no |
-| [`09_marimo_notebook.py`](09_marimo_notebook.py) | The same calls in a reactive [marimo](https://marimo.io) notebook: a sign-in button, `get_me()`, a project dropdown that refetches `get_project_sites()` and `get_project_data()` | signs you in |
+| [`quickstart.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/quickstart.py) | The README walk-through end to end, against a mocked API — runs offline, no account | no |
+| [`01_public_projects.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/01_public_projects.py) | `get_projects()`, `limit`, the columns, collapsed list fields | no |
+| [`02_search_projects.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/02_search_projects.py) | `search_projects()` by name/country/tag, `countries()` | no |
+| [`03_authenticate.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/03_authenticate.py) | `authenticate()` in a browser, the device-code flow, the token cache, `get_token()`, `clear_cached_token()` | signs you in |
+| [`04_token_from_env.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/04_token_from_env.py) | `MERMAID_API_TOKEN`, `token=` per call, one `MermaidClient` shared across calls | yes |
+| [`05_my_projects.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/05_my_projects.py) | `get_me()`, `get_my_projects()`, `search_my_projects()` | yes |
+| [`06_project_endpoints.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/06_project_endpoints.py) | `get_project_sites()`, `get_project_managements()`, `get_project_endpoint()`, `set_default_project()`, `as_project_ids()` | yes |
+| [`07_project_data.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/07_project_data.py) | `get_project_data()` by method and level, `construct_endpoints()`, nested-dict results, covariates | yes |
+| [`08_error_handling.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/08_error_handling.py) | `ValueError`, `MermaidAPIError`, `AuthenticationError`, `MermaidError` | no |
+| [`09_marimo_notebook.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/09_marimo_notebook.py) | The same calls in a reactive [marimo](https://marimo.io) notebook: a sign-in button, `get_me()`, a project dropdown that refetches `get_project_sites()` and `get_project_data()` | signs you in |
 
 ## Running them
 
@@ -52,9 +52,10 @@ Python 3.10 or newer; CI runs the suite on 3.10 and 3.12.
 
 ### The notebook
 
-[`09_marimo_notebook.py`](09_marimo_notebook.py) is a [marimo](https://marimo.io)
-notebook, which is a Python file like the rest — but marimo itself is an extra
-rather than a dependency, so install it first:
+[`09_marimo_notebook.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/09_marimo_notebook.py)
+is a [marimo](https://marimo.io) notebook, which is a Python file like the
+rest — but marimo itself is an extra rather than a dependency, so install it
+first:
 
 ```bash
 python -m pip install 'datamermaid[notebook]'   # or: -e '.[notebook]'
@@ -136,9 +137,10 @@ says which of three things went wrong:
 
 Without that check the same situation surfaces as a traceback ending in
 `ModuleNotFoundError: No module named 'idna'`, several frames inside `httpx`
-and with no mention of what to install. [`_preflight.py`](_preflight.py) is the
-helper that writes those messages; it is not an example, and it deliberately
-imports nothing beyond the standard library.
+and with no mention of what to install.
+[`_preflight.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/_preflight.py)
+is the helper that writes those messages; it is not an example, and it
+deliberately imports nothing beyond the standard library.
 
 All three are ways of running an example against an environment that is not the
 one the package was installed into, so all three go away under `uv run`, which
@@ -182,5 +184,6 @@ export MERMAID_EXAMPLE_PROJECT="00673bec-..."
 The global reference endpoints (`get_reference()`, `get_sites()`,
 `get_managements()`, `get_summary_sampleevents()`, `get_choices()`) and the
 import/write path (`import_*`) are documented in the
-[main README](../README.md#global-data) instead; the write path in particular
-is better read than run, since every one of its actions changes a real project.
+[main README](https://github.com/gridcell/py-datamermaid/blob/main/README.md#global-data)
+instead; the write path in particular is better read than run, since every one
+of its actions changes a real project.
