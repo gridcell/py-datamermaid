@@ -152,6 +152,21 @@ def managements(n: int, start: int = 0) -> list[dict[str, Any]]:
     ]
 
 
+def labelmappings(n: int, start: int = 0, provider: str = "CoralNet") -> list[dict[str, Any]]:
+    """Build ``n`` minimal classification label-mapping records."""
+    return [
+        {
+            "id": f"labelmapping-{i}",
+            "benthic_attribute": f"Attribute {i}",
+            "growth_form": "massive" if i % 2 else "",
+            "provider_id": f"provider-id-{i}",
+            "provider_label": f"Label {i}",
+            "provider": provider,
+        }
+        for i in range(start, start + n)
+    ]
+
+
 def global_url(endpoint: str) -> str:
     """URL of a global endpoint, e.g. ``sites/``."""
     return f"{API_BASE_URL}{endpoint.strip('/')}/"
