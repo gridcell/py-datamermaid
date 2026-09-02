@@ -60,8 +60,23 @@ rather than a dependency, so install it first:
 python -m pip install 'datamermaid[notebook]'   # or: -e '.[notebook]'
 marimo edit examples/09_marimo_notebook.py      # notebook, cells re-run as you edit
 marimo run examples/09_marimo_notebook.py       # read-only app, no code shown
-python examples/09_marimo_notebook.py           # top to bottom, as a plain script
+python examples/09_marimo_notebook.py           # the same read-only app, on 0.0.0.0:8383
 ```
+
+The third of those is the notebook serving itself: its main guard calls
+`serve()`, which builds a read-only app with `marimo.create_asgi_app()` and runs
+it under uvicorn — the same thing `marimo run` does, without needing the marimo
+CLI on the path. It binds every interface, so the notebook is reachable from
+another machine; `MERMAID_EXAMPLE_HOST` and `MERMAID_EXAMPLE_PORT` override the
+address and the port.
+
+Two consequences of that address. Read-only is the mode rather than a
+precaution to drop: `marimo edit --host 0.0.0.0` would offer a Python REPL on
+the serving machine to anyone who can reach the port, and `include_code=False`
+additionally keeps the notebook source on the server. And the app has no login
+of its own — served with `MERMAID_API_TOKEN` already in the environment it comes
+up signed in and shows that account's projects to every visitor, so leave the
+variable unset unless that is what you want.
 
 With uv, name the extra on `uv run` as well as on `uv sync` — `uv run` syncs
 before it runs, and without the extra it would uninstall marimo again:
@@ -71,10 +86,10 @@ uv sync --extra notebook
 uv run --extra notebook marimo edit examples/09_marimo_notebook.py
 ```
 
-The extra asks for marimo 0.13.15 or newer, which is the first release that
-runs the notebook correctly as a plain script: the cells stand down with
-`mo.stop()` while there is no token, and older marimos either let that escape
-as a traceback or ran the stopped cell's dependants anyway.
+The extra asks for marimo 0.13.15 or newer, the oldest release the notebook has
+been checked against: it serves itself there, and its cells stand down with
+`mo.stop()` while there is no token, which older marimos got wrong — letting it
+escape as a traceback, or running the stopped cell's dependants anyway.
 
 Skip the extra and `python examples/09_marimo_notebook.py` says
 `ModuleNotFoundError: No module named 'marimo'`, which is the one import in

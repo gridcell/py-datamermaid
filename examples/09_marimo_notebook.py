@@ -4,7 +4,7 @@ A [marimo](https://marimo.io) notebook is a Python file, and this one is both:
 open it with ``marimo edit`` and it is a notebook whose cells re-run themselves
 whenever something they depend on changes, so choosing a different project in
 the dropdown refetches that project's sites and survey data; run it with plain
-``python`` and the same cells execute top to bottom as a script.
+``python`` and it serves those same cells to a browser, no marimo CLI needed.
 
 The login is the point of the example.  Nothing here hardcodes a token: the
 notebook reports whatever :func:`datamermaid.get_token` finds
@@ -23,11 +23,24 @@ Run it with::
 
     marimo edit examples/09_marimo_notebook.py    # notebook, cells re-run as you edit
     marimo run examples/09_marimo_notebook.py     # read-only app, no code shown
-    python examples/09_marimo_notebook.py         # top to bottom, as a script
+    python examples/09_marimo_notebook.py         # serves it on 0.0.0.0:8383
+
+The last of those needs no marimo CLI: the main guard at the bottom of this file
+serves the notebook as a read-only app on ``0.0.0.0:8383``, reachable from other
+machines on the network as well as this one.  ``MERMAID_EXAMPLE_HOST`` and
+``MERMAID_EXAMPLE_PORT`` override either half.
+
+Two things follow from that address not being loopback.  Read-only is the mode
+rather than a precaution to be dropped: ``marimo edit`` bound to ``0.0.0.0``
+hands a Python REPL on the serving machine to anyone who can reach the port.
+And the served app authenticates nobody, so a notebook started with a token
+already in the environment shows that account's data to whoever opens it --
+leave ``MERMAID_API_TOKEN`` unset and let each visitor use the sign-in button.
 
 Editing this file in marimo and saving it regenerates it from its cells.  marimo
 keeps everything above the ``import marimo`` below, so the docstring survives a
-save; the import guard under it does not, and is worth putting back.
+save; everything under the cells -- ``serve()`` and the main guard that calls it
+-- does not, any more than the import guard does, and is worth putting back.
 """
 
 # Unguarded, and unindented, unlike every other import in these examples:
@@ -244,5 +257,53 @@ def outro(mo):
     return
 
 
+#: Where the main guard binds.  Loopback would be the safer default, but a
+#: notebook you have to be sitting at the machine to open is just `marimo edit`
+#: with extra steps, so this serves to the network and says so in the docstring.
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 8383
+
+#: Overrides for the two above, in the same spirit as MERMAID_EXAMPLE_PROJECT.
+HOST_ENV_VAR = "MERMAID_EXAMPLE_HOST"
+PORT_ENV_VAR = "MERMAID_EXAMPLE_PORT"
+
+
+def serve(host: str | None = None, port: int | None = None) -> None:
+    """Serve the cells above as a read-only app, the way ``marimo run`` does.
+
+    This is ``marimo run`` spelled out.  :func:`marimo.create_asgi_app` is
+    marimo's public embedding API: it builds an ordinary ASGI application from
+    one or more notebooks in Run mode, which any ASGI server can then run --
+    uvicorn here, because that is what arrives with marimo and what the marimo
+    CLI uses itself.  Serving it from your own app, mounted beside your own
+    routes, is the same three calls.
+
+    ``include_code=False`` keeps the source on this side of the wire: the
+    browser is sent the running app and not the notebook.  Nothing here runs
+    the cells in this process -- marimo loads them from the file's parse tree,
+    which is why serving does not re-enter this module.
+    """
+    import os
+
+    # A dependency of marimo rather than of datamermaid, so it is importable
+    # wherever the `import marimo` at the top of this file succeeded.
+    import uvicorn
+
+    host = host or os.environ.get(HOST_ENV_VAR) or DEFAULT_HOST
+    port = port or int(os.environ.get(PORT_ENV_VAR) or DEFAULT_PORT)
+
+    application = (
+        marimo.create_asgi_app(include_code=False).with_app(path="/", root=__file__).build()
+    )
+
+    print(f"Serving {os.path.basename(__file__)} on http://{host}:{port} -- Ctrl-C to stop")
+    uvicorn.run(application, host=host, port=port)
+
+
 if __name__ == "__main__":
-    app.run()
+    # `marimo edit` and `marimo run` never reach this line -- they read the
+    # cells off the parse tree without executing anything at module level.  It
+    # is only `python examples/09_marimo_notebook.py` that lands here, and it
+    # serves the notebook rather than running its cells top to bottom, so that
+    # reaching it in a browser takes no marimo CLI and no second command.
+    serve()

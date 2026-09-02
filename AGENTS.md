@@ -157,7 +157,7 @@ checkout can run the notebook without a second sync:
 
 ```bash
 uv run --extra dev marimo edit examples/09_marimo_notebook.py
-uv run --extra dev python examples/09_marimo_notebook.py  # as a script
+uv run --extra dev python examples/09_marimo_notebook.py  # serves it on 0.0.0.0:8383
 ```
 
 The `notebook` extra is the same marimo pin for people who install the package
@@ -199,12 +199,19 @@ examples/NN_*.py       numbered, runnable scripts per capability; they hit the r
                        API, so tests/test_examples.py only parses them (drift guard)
 examples/09_marimo_notebook.py
                        the one example that is a marimo notebook rather than a
-                       script (`marimo.App`, @app.cell, app.run() under the main
-                       guard) -- authenticated walk-through driven by a sign-in
-                       button and a project dropdown.  marimo is an extra
-                       (`dev` and `notebook`), never a dependency; a cell cannot see module-level
-                       names, so each imports what it uses, and `import marimo`
-                       stays unindented because marimo's tooling needs it there
+                       script (`marimo.App`, @app.cell) -- authenticated
+                       walk-through driven by a sign-in button and a project
+                       dropdown.  Its main guard calls serve(), which builds a
+                       read-only ASGI app with marimo.create_asgi_app() and
+                       runs it on 0.0.0.0:8383 (MERMAID_EXAMPLE_HOST /
+                       MERMAID_EXAMPLE_PORT override), so `python
+                       examples/09_marimo_notebook.py` opens it to a browser
+                       instead of running the cells.  marimo is an extra (`dev`
+                       and `notebook`), never a dependency; a cell cannot see
+                       module-level names, so each imports what it uses, and
+                       `import marimo` stays unindented because marimo's
+                       tooling needs it there; a save from the editor drops
+                       everything below the cells, serve() included
 examples/_preflight.py stdlib-only helper: every example wraps its third-party
                        imports in try/except ImportError and raises
                        missing_dependency(exc), which names the interpreter and

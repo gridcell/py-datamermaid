@@ -461,7 +461,49 @@ def test_notebook_is_shaped_like_a_marimo_notebook(path: Path):
     assert assigned, f"{path.name} never assigns `app = marimo.App(...)`"
 
     assert _cells(tree), f"{path.name} has no @app.cell functions"
-    assert "app.run()" in source, f"{path.name} never runs its cells"
+
+    # `python <notebook>` has to do something with the cells: either run them
+    # top to bottom (`app.run()`) or serve them (`marimo.create_asgi_app()`).
+    # Which one is the notebook's business; having neither means the main guard
+    # every example carries would exit without doing anything.
+    assert "app.run()" in source or "create_asgi_app" in source, (
+        f"{path.name}'s main guard neither runs nor serves its cells"
+    )
+
+
+@pytest.mark.parametrize("path", MARIMO_NOTEBOOKS, ids=lambda path: path.name)
+def test_notebook_docstring_names_the_address_it_serves(path: Path):
+    """A served notebook documents the address it binds, and documents it right.
+
+    The suite cannot start the server, so what it checks is the pair that goes
+    stale together: someone changing ``DEFAULT_PORT`` and leaving the docstring
+    telling the reader to open the old one.
+    """
+    source = path.read_text()
+    if "create_asgi_app" not in source:
+        pytest.skip(f"{path.name} does not serve itself")
+
+    tree = ast.parse(source, str(path))
+    defaults = {
+        target.id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+        for target in node.targets
+        if isinstance(target, ast.Name) and target.id in {"DEFAULT_HOST", "DEFAULT_PORT"}
+    }
+    assert defaults.keys() == {"DEFAULT_HOST", "DEFAULT_PORT"}, (
+        f"{path.name} serves itself without literal DEFAULT_HOST / DEFAULT_PORT"
+    )
+
+    docstring = ast.get_docstring(tree)
+    address = f"{defaults['DEFAULT_HOST']}:{defaults['DEFAULT_PORT']}"
+    assert address in docstring, f"{path.name} serves {address}, which its docstring never names"
+
+    # Binding past loopback is a decision, not a default to arrive at silently.
+    if defaults["DEFAULT_HOST"] not in {"127.0.0.1", "localhost"}:
+        assert "read-only" in docstring.lower(), (
+            f"{path.name} binds {defaults['DEFAULT_HOST']} without saying the app is read-only"
+        )
 
 
 @pytest.mark.parametrize("path", MARIMO_NOTEBOOKS, ids=lambda path: path.name)
@@ -501,11 +543,27 @@ def test_examples_readme_indexes_every_script():
     assert not missing, f"examples/README.md does not link: {missing}"
 
 
+def _defined_in_examples() -> set[str]:
+    """Every function the example files define themselves, e.g. the notebook's ``serve()``."""
+    names = set()
+    for path in EXAMPLE_FILES:
+        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                names.add(node.name)
+    return names
+
+
 def test_examples_readme_names_exist():
-    """Any function the examples index names in backticks must exist."""
+    """Any function the examples index names in backticks must exist.
+
+    Most are ``datamermaid`` exports, which is the drift this catches: a
+    renamed function leaving the index pointing at nothing.  An example may
+    also define its own -- the notebook's ``serve()`` -- so those count too.
+    """
     index = (EXAMPLES / "README.md").read_text()
     names = set(BACKTICKED_CALL.findall(index))
-    missing = sorted(name for name in names if not hasattr(datamermaid, name))
+    known = _defined_in_examples()
+    missing = sorted(name for name in names if not hasattr(datamermaid, name) and name not in known)
     assert not missing, missing
 
 

@@ -204,8 +204,16 @@ marimo is an extra, since nothing in the package needs it:
 
 ```bash
 python -m pip install 'datamermaid[notebook]'
-marimo edit examples/09_marimo_notebook.py
+marimo edit examples/09_marimo_notebook.py    # notebook, cells re-run as you edit
+python examples/09_marimo_notebook.py         # serves it on 0.0.0.0:8383
 ```
+
+Running it with plain `python` needs no marimo CLI: it serves the notebook as a
+read-only app on every interface, so a browser on another machine can open it.
+`MERMAID_EXAMPLE_HOST` and `MERMAID_EXAMPLE_PORT` move it. The served app
+authenticates nobody — start it with `MERMAID_API_TOKEN` set and it shows that
+account's data to anyone who reaches the port; leave the variable unset and each
+visitor signs in for themselves.
 
 [`examples/README.md`](examples/README.md) indexes them and says which need a
 login. Only `quickstart.py` runs offline; the rest talk to the real API.
