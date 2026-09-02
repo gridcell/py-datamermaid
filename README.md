@@ -35,8 +35,8 @@ Or, from a checkout of this repository:
 
 ```bash
 python -m pip install -e .               # the package
-python -m pip install -e ".[dev]"        # plus pytest, respx and ruff
-python -m pip install -e ".[notebook]"   # plus marimo, for examples/09_marimo_notebook.py
+python -m pip install -e ".[dev]"        # plus pytest, respx, ruff and marimo
+python -m pip install -e ".[notebook]"   # just marimo, for examples/09_marimo_notebook.py
 ```
 
 Or with [uv](https://docs.astral.sh/uv/), which needs no interpreter of its own
@@ -593,9 +593,12 @@ fetching it if need be, which is how to reproduce the CI matrix locally. No
 `uv.lock` is committed: this is a library with deliberately loose pins, and a
 lockfile would pin the one resolution the matrix exists to vary.
 
-`notebook` is the other extra, and it is only ever needed by hand: it installs
-marimo for `examples/09_marimo_notebook.py`, which the suite parses like every
-other example rather than running, so neither CI nor `pytest` wants it.
+`notebook` is the other extra: marimo, for
+`examples/09_marimo_notebook.py`. Neither CI nor `pytest` needs it — the suite
+parses that example like every other one rather than running it — but `dev`
+carries the same pin, so a checkout set up with `--extra dev` can open the
+notebook without a second sync. `notebook` on its own is for people who install
+the published package instead of the repository.
 
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so

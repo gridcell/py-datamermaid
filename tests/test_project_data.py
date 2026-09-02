@@ -235,12 +235,17 @@ class TestRequestShape:
         assert route.calls.last.request.headers["Authorization"] == "Bearer secret-token"
 
     @respx.mock
-    def test_asks_for_csv(self, auth_client):
+    def test_does_not_ask_for_csv_by_media_type(self, auth_client):
+        """These endpoints serve CSV, but 406 anyone who asks for ``text/csv``.
+
+        MERMAID's content negotiation cannot satisfy that media type, so the
+        request has to accept anything and let the server pick.
+        """
         route = mock_fishbelt("observations")
 
         get_project_data(PROJECT, client=auth_client)
 
-        assert route.calls.last.request.headers["Accept"] == "text/csv"
+        assert route.calls.last.request.headers["Accept"] == "*/*"
 
     @respx.mock
     def test_no_pagination_parameters_are_sent(self, auth_client):

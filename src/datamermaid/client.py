@@ -270,13 +270,18 @@ class MermaidClient:
         parameters are sent and the whole body is parsed at once -- mermaidr
         does the same in ``get_csv_response``.  An empty body yields an empty
         frame rather than raising.
+
+        Note the ``Accept`` header: these endpoints always answer with CSV, but
+        ``text/csv`` is not one of the types MERMAID's content negotiation can
+        satisfy, and asking for it earns a 406 rather than the document.  So we
+        ask for anything, which is what mermaidr (through httr) does too.
         """
         resolved = self._token_for(require_auth)
         response = self._request(
             self.url_for(endpoint),
             params=params,
             resolved=resolved,
-            headers={"Accept": "text/csv"},
+            headers={"Accept": "*/*"},
         )
 
         if not response.text.strip():

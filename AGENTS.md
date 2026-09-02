@@ -132,7 +132,7 @@ Pure-Python package (`hatchling` build, `src/` layout). Python 3.10+; runtime
 dependencies are `httpx` and `pandas` only.
 
 ```bash
-python -m pip install -e ".[dev]"  # package + pytest, respx, ruff
+python -m pip install -e ".[dev]"  # package + pytest, respx, ruff, marimo
 pytest                       # unit tests + doctests; fully offline (respx / MockTransport)
 ruff check .                 # lint (E, F, I, UP, B, W; line length 100)
 ruff format --check .        # formatting
@@ -143,7 +143,7 @@ Or with [uv](https://docs.astral.sh/uv/), which is what CI runs and which needs
 no pre-existing interpreter:
 
 ```bash
-uv sync --extra dev          # .venv: the checkout (editable) + pytest, respx, ruff
+uv sync --extra dev          # .venv: the checkout (editable) + pytest, respx, ruff, marimo
 uv run --extra dev pytest
 uv run --extra dev ruff check .
 uv run --extra dev ruff format --check .
@@ -151,14 +151,17 @@ uv run python examples/quickstart.py
 uv run --python 3.10 --extra dev pytest   # the other half of the CI matrix
 ```
 
-The `notebook` extra (marimo, for `examples/09_marimo_notebook.py`) is never
-needed by the suite -- that example is parsed like the rest -- but it has its
-own commands:
+The suite never needs marimo -- `examples/09_marimo_notebook.py` is parsed like
+the rest -- but the dev extra installs it anyway, so a `uv sync --extra dev`
+checkout can run the notebook without a second sync:
 
 ```bash
-uv run --extra notebook marimo edit examples/09_marimo_notebook.py
-uv run --extra notebook python examples/09_marimo_notebook.py  # as a script
+uv run --extra dev marimo edit examples/09_marimo_notebook.py
+uv run --extra dev python examples/09_marimo_notebook.py  # as a script
 ```
+
+The `notebook` extra is the same marimo pin for people who install the package
+rather than the checkout; it is what `datamermaid[notebook]` means.
 
 `--extra dev` on `uv run` too: it syncs before running, and without the extra
 it may uninstall the dev tools. `uv.lock` and `.python-version` are gitignored
@@ -198,8 +201,8 @@ examples/09_marimo_notebook.py
                        the one example that is a marimo notebook rather than a
                        script (`marimo.App`, @app.cell, app.run() under the main
                        guard) -- authenticated walk-through driven by a sign-in
-                       button and a project dropdown.  marimo is the `notebook`
-                       extra, not a dependency; a cell cannot see module-level
+                       button and a project dropdown.  marimo is an extra
+                       (`dev` and `notebook`), never a dependency; a cell cannot see module-level
                        names, so each imports what it uses, and `import marimo`
                        stays unindented because marimo's tooling needs it there
 examples/_preflight.py stdlib-only helper: every example wraps its third-party

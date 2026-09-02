@@ -25,3 +25,6 @@ htmlcov/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# direnv (may hold a MERMAID_API_TOKEN)
+.envrc
