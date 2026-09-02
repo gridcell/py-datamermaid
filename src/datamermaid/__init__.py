@@ -52,10 +52,12 @@ from .client import (
     set_default_client,
 )
 from .endpoints import (
+    CLASSIFICATION_PROVIDERS,
     KNOWN_ENDPOINTS,
     REFERENCE_ENDPOINTS,
     countries,
     get_choices,
+    get_classification_labelmappings,
     get_endpoint,
     get_managements,
     get_reference,
@@ -95,6 +97,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "API_BASE_URL",
+    "CLASSIFICATION_PROVIDERS",
     "DATA_LEVELS",
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_PROJECT_ENV_VAR",
@@ -115,6 +118,7 @@ __all__ = [
     "countries",
     "default_client",
     "get_choices",
+    "get_classification_labelmappings",
     "get_default_project",
     "get_endpoint",
     "get_gfcr_report",

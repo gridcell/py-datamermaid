@@ -399,6 +399,19 @@ choices["reeftypes"]  # DataFrame with id, name, ...
 datamermaid.countries()[:3]  # ['Afghanistan', 'Albania', 'Algeria']
 ```
 
+`get_classification_labelmappings()` is the lookup table between MERMAID's
+benthic attributes and the labels image classifiers use, so a classifier's
+output can be read as MERMAID categories. Pass `provider=` to keep just one
+classifier's labels:
+
+```python
+datamermaid.get_classification_labelmappings()
+datamermaid.get_classification_labelmappings("CoralNet")
+```
+
+It accepts `"CoralNet"` or `"ReefCloud"` (`datamermaid.CLASSIFICATION_PROVIDERS`)
+and raises `ValueError` for anything else, before any request is made.
+
 Any other global endpoint can be reached with the generic getter, which passes
 extra keyword arguments through as query parameters. Endpoint names outside
 `datamermaid.KNOWN_ENDPOINTS` are still requested, with a `UserWarning`:
@@ -433,7 +446,7 @@ missing, before it downloads anything.
 | Function | Returns |
 | --- | --- |
 | `get_projects`, `search_projects`, `get_my_projects`, `search_my_projects` | `DataFrame`, one row per project |
-| `get_sites`, `get_managements`, `get_reference`, `get_summary_sampleevents`, `get_endpoint` | `DataFrame`, one row per record |
+| `get_sites`, `get_managements`, `get_reference`, `get_summary_sampleevents`, `get_classification_labelmappings`, `get_endpoint` | `DataFrame`, one row per record |
 | `get_project_sites`, `get_project_managements`, `get_project_endpoint` | `DataFrame` with a leading `project` column (the project id) |
 | `get_project_data` — one method, one level | `DataFrame`; with several projects, a leading `project_id` column |
 | `get_project_data` — `bleaching`/`observations` | `{"colonies_bleached": DataFrame, "percent_cover": DataFrame}` |
@@ -586,6 +599,7 @@ Every function mermaidr exports is listed here.
 | `mermaid_get_reference()` | `datamermaid.get_reference()` | Same seven reference tables (`REFERENCE_ENDPOINTS`), invertebrates included. |
 | `mermaid_get_summary_sampleevents()` | `datamermaid.get_summary_sampleevents()` | |
 | `mermaid_countries()` | `datamermaid.countries()` | A `list[str]`. `get_choices()` (internal in mermaidr) exposes every vocabulary as a `dict` of frames. |
+| `mermaid_get_classification_labelmappings()` | `datamermaid.get_classification_labelmappings()` | Same `provider=` filter, restricted to `"CoralNet"` and `"ReefCloud"` (`CLASSIFICATION_PROVIDERS`); a bad value raises `ValueError`. |
 | `mermaid_import_get_template_and_options()` | `datamermaid.import_get_template_and_options()` | Returns a `(template, options)` tuple rather than one list with a `"Template"` entry. No `save=`; write the template with `template.to_csv()`. |
 | `mermaid_import_check_options()` | `datamermaid.import_check_options()` | Same `data, options, field` arguments; reports as a `DataFrame`. |
 | `mermaid_import_project_data()` | `datamermaid.import_project_data()` | Same `dryrun=True` default. `clearexisting=True` also needs `clearexisting_confirm=True` instead of a console prompt. Returns `None` on success, or a frame of problems. |
@@ -594,15 +608,14 @@ Every function mermaidr exports is listed here.
 | `mermaid_import_bulk_edit()` | `datamermaid.import_bulk_edit()` | `confirm=True` replaces the console prompt; `method` is required. |
 | `mermaid_get_gfcr_report()` | `datamermaid.get_gfcr_report()` | Same `project`, `save=`. Returns a `dict` of one frame per worksheet rather than a named list. Needs the `datamermaid[excel]` extra (openpyxl). |
 
-Not ported yet: `mermaid_get_classification_labelmappings()`, which can be
-reached in the meantime with `get_endpoint()`. mermaidr's `%>%` re-export has
-no counterpart; use pandas method chaining.
+mermaidr's `%>%` re-export has no counterpart; use pandas method chaining.
 
 Python-only additions: `MermaidClient` / `default_client()` /
 `set_default_client()` for connection reuse and testing, `as_project_ids()`,
 `construct_endpoints()`, and the constants `METHODS`, `DATA_LEVELS`,
-`REFERENCE_ENDPOINTS`, `KNOWN_ENDPOINTS`, `METHOD_ENDPOINTS`, `API_BASE_URL`,
-`DEFAULT_PAGE_SIZE`, `TOKEN_ENV_VAR` and `DEFAULT_PROJECT_ENV_VAR`.
+`REFERENCE_ENDPOINTS`, `CLASSIFICATION_PROVIDERS`, `KNOWN_ENDPOINTS`,
+`METHOD_ENDPOINTS`, `API_BASE_URL`, `DEFAULT_PAGE_SIZE`, `TOKEN_ENV_VAR` and
+`DEFAULT_PROJECT_ENV_VAR`.
 
 ## Development
 

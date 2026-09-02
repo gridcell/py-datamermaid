@@ -10,7 +10,8 @@ happens to be signed in.  Project-scoped data lives in
 pagination and ``limit`` handling live in one place.  It mirrors mermaidr's
 ``mermaid_get_endpoint``; the named functions mirror ``mermaid_get_sites``,
 ``mermaid_get_managements``, ``mermaid_get_reference``,
-``mermaid_get_summary_sampleevents``, ``get_choices`` and
+``mermaid_get_summary_sampleevents``,
+``mermaid_get_classification_labelmappings``, ``get_choices`` and
 ``mermaid_countries``.
 """
 
@@ -28,10 +29,12 @@ from .project_endpoints import MANAGEMENT_COLUMNS, PROJECT_COLUMN, SITE_COLUMNS
 from .utils import records_to_df
 
 __all__ = [
+    "CLASSIFICATION_PROVIDERS",
     "KNOWN_ENDPOINTS",
     "REFERENCE_ENDPOINTS",
     "countries",
     "get_choices",
+    "get_classification_labelmappings",
     "get_endpoint",
     "get_managements",
     "get_reference",
@@ -50,6 +53,10 @@ REFERENCE_ENDPOINTS = (
     "invertspecies",
 )
 
+#: Image-classification providers :func:`get_classification_labelmappings`
+#: accepts, in mermaidr's order.
+CLASSIFICATION_PROVIDERS = ("CoralNet", "ReefCloud")
+
 #: Global endpoints known to answer a plain paginated GET.  :func:`get_endpoint`
 #: accepts any string, but warns about one not listed here since a typo would
 #: otherwise surface only as an HTTP 404.  ``projects`` is listed because it is
@@ -60,6 +67,7 @@ KNOWN_ENDPOINTS = frozenset(
     {
         "benthicattributes",
         "choices",
+        "classification/labelmappings",
         "fishfamilies",
         "fishgenera",
         "fishgroupings",
@@ -252,6 +260,65 @@ def get_reference(
         raise ValueError(f"`reference` must be one of {options}, not {reference!r}.")
 
     return get_endpoint(reference, limit, client=client)
+
+
+def get_classification_labelmappings(
+    provider: str | None = None,
+    limit: int | None = None,
+    *,
+    client: MermaidClient | None = None,
+) -> pd.DataFrame:
+    """Get how MERMAID's benthic attributes map to image-classifier labels.
+
+    Image classifiers label a photo quadrat with their own vocabulary; this
+    table says which MERMAID benthic attribute (and growth form) each of their
+    labels stands for, so a classifier's output can be read as MERMAID
+    categories.  Mirrors mermaidr's
+    ``mermaid_get_classification_labelmappings()``.
+
+    Parameters
+    ----------
+    provider:
+        Keep only one provider's labels: ``"CoralNet"`` or ``"ReefCloud"``
+        (:data:`CLASSIFICATION_PROVIDERS`).  ``None`` (the default) returns
+        every provider's.
+    limit:
+        Maximum number of mappings to return.  ``None`` returns the whole
+        table.
+    client:
+        Client to issue the request with.  Defaults to the process-wide client.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per mapping, with every field the API returned: ``id``,
+        ``benthic_attribute``, ``growth_form``, ``provider_id``,
+        ``provider_label`` and ``provider``.  ``benthic_attribute`` and
+        ``growth_form`` are names, not ids, and ``growth_form`` is empty where
+        a label maps to an attribute regardless of growth form.
+
+    Raises
+    ------
+    ValueError
+        If ``provider`` is neither ``None`` nor one of
+        :data:`CLASSIFICATION_PROVIDERS`.
+
+    Examples
+    --------
+    >>> import datamermaid
+    >>> datamermaid.get_classification_labelmappings()  # doctest: +SKIP
+    >>> datamermaid.get_classification_labelmappings("CoralNet")  # doctest: +SKIP
+    """
+    if provider is not None and provider not in CLASSIFICATION_PROVIDERS:
+        options = ", ".join(f'"{name}"' for name in CLASSIFICATION_PROVIDERS)
+        raise ValueError(f"`provider` must be None or one of {options}, not {provider!r}.")
+
+    return get_endpoint(
+        "classification/labelmappings",
+        limit,
+        client=client,
+        provider=provider,
+    )
 
 
 def get_summary_sampleevents(

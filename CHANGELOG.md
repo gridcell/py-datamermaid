@@ -10,7 +10,14 @@ Refactors, test-only work and internal cleanups do not belong here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `get_classification_labelmappings()`, the last unported mermaidr function:
+  MERMAID's map from benthic attributes and growth forms to the labels
+  CoralNet and ReefCloud use. `provider=` narrows it to one of
+  `CLASSIFICATION_PROVIDERS` (`"CoralNet"`, `"ReefCloud"`) and raises
+  `ValueError` for anything else. `classification/labelmappings` joins
+  `KNOWN_ENDPOINTS`, so `get_endpoint()` no longer warns about it.
 
 ## [0.1.0] - 2026-09-02
 

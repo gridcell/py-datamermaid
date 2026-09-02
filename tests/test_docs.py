@@ -31,9 +31,8 @@ DOCS = ROOT / "docs"
 MKDOCS_YML = ROOT / "mkdocs.yml"
 PACKAGE = ROOT / "src" / "datamermaid"
 
-#: mermaidr's exports, from its NAMESPACE, that have a datamermaid counterpart.
-#: ``mermaid_get_classification_labelmappings`` is the only one that does not
-#: (and ``%>%`` is not a function to port).
+#: mermaidr's exports, from its NAMESPACE, that have a datamermaid counterpart:
+#: all of them, since ``%>%`` is not a function to port.
 PORTED_MERMAIDR_FUNCTIONS = {
     "mermaid_auth",
     "mermaid_token",
@@ -54,6 +53,7 @@ PORTED_MERMAIDR_FUNCTIONS = {
     "mermaid_get_reference",
     "mermaid_get_summary_sampleevents",
     "mermaid_countries",
+    "mermaid_get_classification_labelmappings",
     "mermaid_import_get_template_and_options",
     "mermaid_import_check_options",
     "mermaid_import_project_data",

@@ -10,13 +10,23 @@ import pytest
 import respx
 
 import datamermaid
-from conftest import choices_payload, global_url, managements, page, query_of, sites
+from conftest import (
+    choices_payload,
+    global_url,
+    labelmappings,
+    managements,
+    page,
+    query_of,
+    sites,
+)
 from datamermaid.client import DEFAULT_PAGE_SIZE
 from datamermaid.endpoints import (
+    CLASSIFICATION_PROVIDERS,
     KNOWN_ENDPOINTS,
     REFERENCE_ENDPOINTS,
     countries,
     get_choices,
+    get_classification_labelmappings,
     get_endpoint,
     get_managements,
     get_reference,
@@ -28,6 +38,16 @@ from datamermaid.project_endpoints import MANAGEMENT_COLUMNS, PROJECT_COLUMN, SI
 
 SITES_URL = global_url("sites")
 CHOICES_URL = global_url("choices")
+LABELMAPPINGS_URL = global_url("classification/labelmappings")
+
+LABELMAPPING_COLUMNS = [
+    "id",
+    "benthic_attribute",
+    "growth_form",
+    "provider_id",
+    "provider_label",
+    "provider",
+]
 
 
 class TestGetEndpoint:
@@ -309,6 +329,89 @@ class TestGetReference:
             get_reference("FishFamilies", client=client)
 
 
+class TestGetClassificationLabelmappings:
+    @respx.mock
+    def test_returns_a_frame_of_mappings(self, client):
+        route = respx.get(LABELMAPPINGS_URL).mock(
+            return_value=httpx.Response(200, json=page(labelmappings(3)))
+        )
+
+        df = get_classification_labelmappings(client=client)
+
+        assert route.called
+        assert isinstance(df, pd.DataFrame)
+        assert list(df.columns) == LABELMAPPING_COLUMNS
+        assert list(df["provider_label"]) == ["Label 0", "Label 1", "Label 2"]
+
+    @respx.mock
+    def test_the_endpoint_is_known_so_nothing_warns(self, client):
+        """``classification/labelmappings`` sits below the root but is not a typo."""
+        respx.get(LABELMAPPINGS_URL).mock(
+            return_value=httpx.Response(200, json=page(labelmappings(1)))
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            get_classification_labelmappings(client=client)
+
+        assert "classification/labelmappings" in KNOWN_ENDPOINTS
+
+    @respx.mock
+    def test_no_provider_filter_is_sent_by_default(self, client):
+        route = respx.get(LABELMAPPINGS_URL).mock(
+            return_value=httpx.Response(200, json=page(labelmappings(1)))
+        )
+
+        get_classification_labelmappings(client=client)
+
+        query = query_of(route.calls.last.request)
+        assert "provider" not in query
+        assert query["limit"] == [str(DEFAULT_PAGE_SIZE)]
+
+    @respx.mock
+    @pytest.mark.parametrize("provider", CLASSIFICATION_PROVIDERS)
+    def test_provider_is_sent_as_a_query_parameter(self, client, provider):
+        route = respx.get(LABELMAPPINGS_URL).mock(
+            return_value=httpx.Response(200, json=page(labelmappings(2, provider=provider)))
+        )
+
+        df = get_classification_labelmappings(provider, client=client)
+
+        assert query_of(route.calls.last.request)["provider"] == [provider]
+        assert set(df["provider"]) == {provider}
+
+    @respx.mock
+    def test_limit_is_sent_and_honoured(self, client):
+        route = respx.get(LABELMAPPINGS_URL).mock(
+            return_value=httpx.Response(200, json=page(labelmappings(5), count=5))
+        )
+
+        df = get_classification_labelmappings(limit=2, client=client)
+
+        assert len(df) == 2
+        assert query_of(route.calls.last.request)["limit"] == ["2"]
+
+    @pytest.mark.parametrize("provider", ["coralnet", "Coralnet", "reefcloud", "", ["CoralNet"], 1])
+    def test_other_providers_raise_listing_the_options(self, client, provider):
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.get(url__regex=r".*")
+            with pytest.raises(ValueError) as excinfo:
+                get_classification_labelmappings(provider, client=client)
+            assert not route.called
+
+        message = str(excinfo.value)
+        assert "`provider` must be None or one of" in message
+        for option in CLASSIFICATION_PROVIDERS:
+            assert f'"{option}"' in message
+
+    @respx.mock
+    def test_an_api_error_raises(self, client):
+        respx.get(LABELMAPPINGS_URL).mock(return_value=httpx.Response(500, text="boom"))
+
+        with pytest.raises(MermaidAPIError):
+            get_classification_labelmappings(client=client)
+
+
 class TestGetChoices:
     @respx.mock
     def test_returns_a_frame_per_vocabulary(self, client):
@@ -428,10 +531,12 @@ class TestExports:
     @pytest.mark.parametrize(
         "name",
         [
+            "CLASSIFICATION_PROVIDERS",
             "KNOWN_ENDPOINTS",
             "REFERENCE_ENDPOINTS",
             "countries",
             "get_choices",
+            "get_classification_labelmappings",
             "get_endpoint",
             "get_managements",
             "get_reference",
