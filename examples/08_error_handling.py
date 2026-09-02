@@ -20,7 +20,12 @@ from __future__ import annotations
 
 import warnings
 
-import datamermaid
+try:
+    import datamermaid
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 MISSING_PROJECT = "00000000-0000-4000-8000-000000000000"
 

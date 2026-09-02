@@ -24,8 +24,13 @@ from __future__ import annotations
 
 import os
 
-import datamermaid
-from datamermaid import TOKEN_ENV_VAR, MermaidClient
+try:
+    import datamermaid
+    from datamermaid import TOKEN_ENV_VAR, MermaidClient
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 
 def read_token() -> str:

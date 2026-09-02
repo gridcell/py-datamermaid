@@ -20,9 +20,14 @@ from __future__ import annotations
 
 import os
 
-import pandas as pd
+try:
+    import pandas as pd
 
-import datamermaid
+    import datamermaid
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 #: Set this to a project id to run the example against a particular project.
 PROJECT_ENV_VAR = "MERMAID_EXAMPLE_PROJECT"

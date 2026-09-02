@@ -18,8 +18,13 @@ Run it with::
 
 from __future__ import annotations
 
-import datamermaid
-from datamermaid import TOKEN_ENV_VAR
+try:
+    import datamermaid
+    from datamermaid import TOKEN_ENV_VAR
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 #: Where :func:`datamermaid.authenticate` caches the token it obtains.
 CACHE_PATH = "$XDG_CONFIG_HOME/datamermaid/token.json (~/.config/... by default)"

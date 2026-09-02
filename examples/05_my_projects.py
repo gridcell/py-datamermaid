@@ -16,9 +16,14 @@ Run it with::
 
 from __future__ import annotations
 
-import pandas as pd
+try:
+    import pandas as pd
 
-import datamermaid
+    import datamermaid
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 
 def show(frame: pd.DataFrame, *columns: str) -> None:

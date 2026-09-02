@@ -20,10 +20,15 @@ import json
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
+try:
+    import httpx
 
-import datamermaid
-from datamermaid import MermaidClient
+    import datamermaid
+    from datamermaid import MermaidClient
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 # Survey CSVs are the fixtures the test suite uses, which are trimmed copies of
 # real MERMAID responses.
