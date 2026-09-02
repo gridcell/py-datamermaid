@@ -185,6 +185,19 @@ examples/09_marimo_notebook.py
                        `import marimo` stays unindented because marimo's
                        tooling needs it there; a save from the editor drops
                        everything below the cells, serve() included
+examples/10_importing_data.py
+                       the only example that can change anything upstream: the
+                       fishbelt write path, stopping after the dry run unless
+                       `--submit` is passed, which then imports, bulk-validates
+                       and bulk-submits one made-up record.  It never passes
+                       clearexisting=True and never calls import_bulk_edit();
+                       both are described in comments instead
+examples/12_gfcr_report.py
+                       needs the `excel` extra, so its import guard imports
+                       openpyxl itself and passes
+                       distribution="datamermaid[excel]" --
+                       tests/test_examples.py checks that the extra it names
+                       exists in pyproject.toml
 mkdocs.yml             the documentation site: Material theme, `strict: true`,
                        mkdocstrings (numpy docstrings, `filters: public`, so a
                        module's `__all__` is what gets rendered) and

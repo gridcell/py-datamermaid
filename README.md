@@ -198,15 +198,18 @@ python examples/quickstart.py
 [`examples/`](https://github.com/gridcell/py-datamermaid/blob/main/examples/README.md)
 holds a numbered set of small runnable scripts, one per capability — public
 project listing and search, the three ways to authenticate, your own projects,
-project-scoped endpoints, survey data, and error handling:
+project-scoped endpoints, survey data, error handling, the import/write path,
+the image-classifier label mappings, and the GFCR report:
 
 ```bash
 python examples/01_public_projects.py   # public data; no account needed
 python examples/03_authenticate.py      # sign in and cache a token
 python examples/07_project_data.py      # survey data, by method and level
+python examples/10_importing_data.py    # the write path, dry run only
 ```
 
-The last of them,
+`10_importing_data.py` is the one that could change something upstream, and it
+writes nothing without `--submit`. One of the others,
 [`09_marimo_notebook.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/09_marimo_notebook.py),
 is a [marimo](https://marimo.io) notebook rather than a script: a sign-in
 button and a project dropdown, with the cells that read them refetching on
