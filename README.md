@@ -23,6 +23,7 @@ function, generated from the docstrings.
 - [Project data](#project-data)
   - [`get_project_data()` — methods and data levels](#get_project_data--methods-and-data-levels)
 - [Global data](#global-data)
+- [Reports](#reports)
 - [Return shapes](#return-shapes)
 - [Errors](#errors)
 - [Importing data](#importing-data)
@@ -42,6 +43,7 @@ Or, from a checkout of this repository:
 python -m pip install -e .               # the package
 python -m pip install -e ".[dev]"        # plus pytest, respx, ruff and marimo
 python -m pip install -e ".[notebook]"   # just marimo, for examples/09_marimo_notebook.py
+python -m pip install -e ".[excel]"      # just openpyxl, for get_gfcr_report()
 ```
 
 Or with [uv](https://docs.astral.sh/uv/), which needs no interpreter of its own
@@ -406,6 +408,26 @@ datamermaid.get_endpoint("fishsizes")
 datamermaid.get_endpoint("sites", country="Fiji", limit=50)
 ```
 
+## Reports
+
+The Global Fund for Coral Reefs report is an Excel workbook MERMAID generates
+on request, one worksheet per indicator table. `get_gfcr_report()` asks for it,
+unpacks the archive it comes back in, and returns one `DataFrame` per
+worksheet:
+
+```python
+report = datamermaid.get_gfcr_report("00673bec-...")
+sorted(report)  # ['F1', 'F2', 'F3', ...]
+report["F1"].head()
+
+# Several projects land in one report, and save= keeps the workbook itself:
+datamermaid.get_gfcr_report(["00673bec-...", "2c0c9857-..."], save="gfcr.xlsx")
+```
+
+Reading a workbook needs `openpyxl`, which is not a runtime dependency:
+`pip install "datamermaid[excel]"`. `get_gfcr_report()` says so if it is
+missing, before it downloads anything.
+
 ## Return shapes
 
 | Function | Returns |
@@ -418,6 +440,7 @@ datamermaid.get_endpoint("sites", country="Fiji", limit=50)
 | `get_project_data` — several methods or levels | `{method: {data: <either of the above>}}` |
 | `get_me` | `dict` — `me/` answers with a single object |
 | `get_choices` | `dict[str, DataFrame]`, one frame per vocabulary |
+| `get_gfcr_report` | `dict[str, DataFrame]`, one frame per worksheet of the report |
 | `countries` | `list[str]` |
 | `get_default_project`, `as_project_ids` | `list[str]` of project ids (`None` when no default is set) |
 | `construct_endpoints` | `{method: {data: [endpoint, ...]}}` |
@@ -569,11 +592,11 @@ Every function mermaidr exports is listed here.
 | `mermaid_import_bulk_validate()` | `datamermaid.import_bulk_validate()` | Returns the `status`/`n` counts instead of printing them. |
 | `mermaid_import_bulk_submit()` | `datamermaid.import_bulk_submit()` | `confirm=True` replaces the console prompt. |
 | `mermaid_import_bulk_edit()` | `datamermaid.import_bulk_edit()` | `confirm=True` replaces the console prompt; `method` is required. |
+| `mermaid_get_gfcr_report()` | `datamermaid.get_gfcr_report()` | Same `project`, `save=`. Returns a `dict` of one frame per worksheet rather than a named list. Needs the `datamermaid[excel]` extra (openpyxl). |
 
-Not ported yet: `mermaid_get_classification_labelmappings()` and
-`mermaid_get_gfcr_report()`. Both endpoints can be reached in the meantime with
-`get_endpoint()` / `get_project_endpoint()`. mermaidr's `%>%` re-export has no
-counterpart; use pandas method chaining.
+Not ported yet: `mermaid_get_classification_labelmappings()`, which can be
+reached in the meantime with `get_endpoint()`. mermaidr's `%>%` re-export has
+no counterpart; use pandas method chaining.
 
 Python-only additions: `MermaidClient` / `default_client()` /
 `set_default_client()` for connection reuse and testing, `as_project_ids()`,

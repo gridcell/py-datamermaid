@@ -163,6 +163,12 @@ uv run --extra dev python examples/09_marimo_notebook.py  # serves it on 0.0.0.0
 The `notebook` extra is the same marimo pin for people who install the package
 rather than the checkout; it is what `datamermaid[notebook]` means.
 
+The `excel` extra is openpyxl, which pandas needs to read the workbook
+`get_gfcr_report()` downloads.  It is folded into `dev` so the offline tests can
+build a workbook to answer the mocked request with; `src/datamermaid/reports.py`
+imports it inside the function and raises an ImportError naming
+`datamermaid[excel]` when it is absent.
+
 The `docs` extra is the MkDocs site (`mkdocs.yml`, `docs/`).  It is deliberately
 outside `dev`: the offline matrix never imports mkdocs, and `tests/test_docs.py`
 guards the site by reading `mkdocs.yml` and `docs/**/*.md` as text.
@@ -211,6 +217,8 @@ src/datamermaid/
   project_data.py      get_project_data(): method x data level -> CSV endpoints
   endpoints.py         global unauthenticated endpoints: sites, managements, reference, choices
   import_.py           write path: template/options, option checks, ingest, bulk actions
+  reports.py           get_gfcr_report(): POST reports/, unzip, one frame per sheet;
+                       openpyxl is lazy-imported (the `excel` extra), never a dependency
 tests/                 pytest + respx; fixtures/ holds trimmed real MERMAID CSVs
 examples/quickstart.py the README walk-through on an httpx.MockTransport (run by tests)
 examples/NN_*.py       numbered, runnable scripts per capability; they hit the real

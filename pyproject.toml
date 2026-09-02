@@ -34,7 +34,13 @@ dependencies = ["httpx>=0.24", "pandas>=1.5"]
 # marimo is here as well as in `notebook` below: `uv sync --extra dev` is the
 # documented setup path, and without it `uv run examples/09_marimo_notebook.py`
 # fails on the import rather than serving the notebook.
-dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5", "marimo>=0.13.15"]
+dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5", "marimo>=0.13.15", "openpyxl>=3.1"]
+# `get_gfcr_report()` parses the Excel workbook MERMAID generates, which
+# pandas can only read through openpyxl.  It stays out of `dependencies` so the
+# runtime requirements remain httpx and pandas; the function imports it lazily
+# and points at this extra when it is missing.  It is in `dev` as well, because
+# the offline tests build a workbook to answer the mocked request with.
+excel = ["openpyxl>=3.1"]
 # Only examples/09_marimo_notebook.py needs this; the library itself never
 # imports marimo, and the test suite only parses that example.  0.13.15 is the
 # oldest release the notebook has been checked against: it serves itself there

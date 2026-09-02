@@ -297,6 +297,7 @@ class MermaidClient:
         json: Any | None = None,
         files: Any | None = None,
         data: Any | None = None,
+        headers: dict[str, str] | None = None,
         require_auth: bool | str = True,
         raise_for_error: bool = True,
     ) -> httpx.Response:
@@ -307,12 +308,17 @@ class MermaidClient:
         the per-row problems it found in the body of a *failed* response, so
         the response object itself is what comes back.  ``require_auth``
         defaults to ``True``: nothing in MERMAID can be written anonymously.
+
+        ``headers`` overrides the client's own for this request, which is how
+        the reports endpoint asks for something other than JSON back (see
+        :mod:`datamermaid.reports`).
         """
         return self._send(
             method,
             self.url_for(endpoint),
             params=params,
             resolved=self._token_for(require_auth),
+            headers=headers,
             json=json,
             files=files,
             data=data,

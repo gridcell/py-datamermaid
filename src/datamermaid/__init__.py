@@ -37,6 +37,8 @@ Modules
     Global, unauthenticated endpoints and reference tables.
 :mod:`datamermaid.import_`
     The write path: templates, checks, ingest and bulk actions.
+:mod:`datamermaid.reports`
+    Generated reports (GFCR), returned as a dict of frames.
 """
 
 from __future__ import annotations
@@ -87,6 +89,7 @@ from .project_endpoints import (
     set_default_project,
 )
 from .projects import get_my_projects, get_projects, search_my_projects, search_projects
+from .reports import get_gfcr_report
 
 __version__ = "0.1.0"
 
@@ -114,6 +117,7 @@ __all__ = [
     "get_choices",
     "get_default_project",
     "get_endpoint",
+    "get_gfcr_report",
     "get_managements",
     "get_me",
     "get_my_projects",
