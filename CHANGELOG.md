@@ -18,6 +18,12 @@ Refactors, test-only work and internal cleanups do not belong here.
   `CLASSIFICATION_PROVIDERS` (`"CoralNet"`, `"ReefCloud"`) and raises
   `ValueError` for anything else. `classification/labelmappings` joins
   `KNOWN_ENDPOINTS`, so `get_endpoint()` no longer warns about it.
+- Three more runnable examples, ported from mermaidr's vignettes:
+  `examples/10_importing_data.py` (the fishbelt write path, dry run only until
+  `--submit`), `examples/11_classification_labelmappings.py` (joining a
+  classifier's labels onto MERMAID benthic attributes) and
+  `examples/12_gfcr_report.py` (`get_gfcr_report()`, which needs the `excel`
+  extra).
 
 ## [0.1.0] - 2026-09-02
 

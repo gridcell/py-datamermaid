@@ -8,7 +8,8 @@ uv run examples/01_public_projects.py   # with uv, from a checkout
 ```
 
 They are numbered so they can be read in order — public endpoints first, then
-signing in, then everything that needs a login.
+signing in, then everything that needs a login, and the more specialised
+workflows (importing, classifier labels, reports) last.
 
 | Example | Shows | Login |
 | --- | --- | --- |
@@ -22,6 +23,9 @@ signing in, then everything that needs a login.
 | [`07_project_data.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/07_project_data.py) | `get_project_data()` by method and level, `construct_endpoints()`, nested-dict results, covariates | yes |
 | [`08_error_handling.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/08_error_handling.py) | `ValueError`, `MermaidAPIError`, `AuthenticationError`, `MermaidError` | no |
 | [`09_marimo_notebook.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/09_marimo_notebook.py) | The same calls in a reactive [marimo](https://marimo.io) notebook: a sign-in button, `get_me()`, a project dropdown that refetches `get_project_sites()` and `get_project_data()` | signs you in |
+| [`10_importing_data.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/10_importing_data.py) | The write path end to end: `import_get_template_and_options()`, a filled-in fishbelt row, `import_check_options()`, a dry-run `import_project_data()`, and — only behind `--submit` — the real import, `import_bulk_validate()` and `import_bulk_submit()` | yes, and write access |
+| [`11_classification_labelmappings.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/11_classification_labelmappings.py) | `get_classification_labelmappings()`, `CLASSIFICATION_PROVIDERS`, and joining a classifier's labels onto MERMAID benthic attributes with pandas | no |
+| [`12_gfcr_report.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/12_gfcr_report.py) | `get_gfcr_report()`: request the workbook, `save=` it, read the sheets it comes back as | yes |
 
 ## Running them
 
@@ -109,6 +113,46 @@ and a missing `datamermaid` reports itself from the first cell instead. Saving
 from the editor regenerates the file from its cells and drops the guard; the
 docstring survives.
 
+### The write path
+
+[`10_importing_data.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/10_importing_data.py)
+is the only example that can change anything in MERMAID, and it does not unless
+you ask it to:
+
+```bash
+python examples/10_importing_data.py             # template, options, dry run
+python examples/10_importing_data.py --submit    # ... and import for real
+```
+
+Without `--submit` it stops after the dry run — `import_project_data()`
+dry-runs by default, so MERMAID checks the record and reports what is wrong
+with it without saving anything. With `--submit` it imports one made-up
+fishbelt observation, validates it and submits it, so point it at a project you
+are happy to have a stray record in and delete the record in Collect
+afterwards. It never passes `clearexisting=True`, which would delete the
+project's existing records for that method, and never calls
+`import_bulk_edit()`; both are described in comments instead.
+
+### The GFCR report
+
+[`12_gfcr_report.py`](https://github.com/gridcell/py-datamermaid/blob/main/examples/12_gfcr_report.py)
+reads the Excel workbook MERMAID generates, which pandas can only do through
+`openpyxl` — an extra rather than a dependency, like marimo above:
+
+```bash
+python -m pip install 'datamermaid[excel]'   # or: -e '.[excel]'
+python examples/12_gfcr_report.py
+
+uv sync --extra excel
+uv run --extra excel examples/12_gfcr_report.py
+```
+
+The report only exists for projects enrolled in GFCR reporting, so name one in
+`MERMAID_EXAMPLE_PROJECT`; anything else gets an error from MERMAID or a
+workbook with nothing in it. Generating it takes MERMAID a minute or so, and
+the example makes exactly one request. It saves the workbook to a temporary
+directory unless `MERMAID_EXAMPLE_GFCR_XLSX` names somewhere to keep it.
+
 ### Troubleshooting
 
 Every example checks its imports before doing anything, so a broken install
@@ -150,8 +194,9 @@ repository, `uv sync && uv run examples/quickstart.py` rebuilds `.venv` from
 
 ## Credentials
 
-Examples 01, 02 and 08 use public endpoints and need no account. The rest need
-a MERMAID login, resolved in this order:
+Examples 01, 02, 08 and 11 use public endpoints and need no account. The rest
+need a MERMAID login — and example 10 needs one with *write* access to the
+project it is pointed at. It is resolved in this order:
 
 1. a `token=` argument, if the call passes one;
 2. the `MERMAID_API_TOKEN` environment variable;
@@ -169,7 +214,7 @@ No example hardcodes a token, and none prints more than a masked prefix of one.
 
 ## Choosing a project
 
-The project-scoped examples (06, 07, 09) need a project id. They read
+The project-scoped examples (06, 07, 09, 10, 12) need a project id. They read
 `MERMAID_EXAMPLE_PROJECT` if it is set, and otherwise use the first project on
 your account — the notebook puts the named project in its dropdown, whether or
 not it is one of your own, and preselects it — so nothing here depends on a
@@ -179,11 +224,13 @@ UUID that may go away:
 export MERMAID_EXAMPLE_PROJECT="00673bec-..."
 ```
 
+For examples 10 and 12 the project matters more than for the rest: 10 writes to
+it, and 12 only has a report to fetch if it is a GFCR project.
+
 ## Not covered here
 
-The global reference endpoints (`get_reference()`, `get_sites()`,
-`get_managements()`, `get_summary_sampleevents()`, `get_choices()`) and the
-import/write path (`import_*`) are documented in the
+The global reference endpoints — `get_reference()`, `get_sites()`,
+`get_managements()`, `get_summary_sampleevents()` and `get_choices()` — have no
+example of their own; they are one call each, and the
 [main README](https://github.com/gridcell/py-datamermaid/blob/main/README.md#global-data)
-instead; the write path in particular is better read than run, since every one
-of its actions changes a real project.
+covers them. Example 11 uses `get_reference()` in passing.
