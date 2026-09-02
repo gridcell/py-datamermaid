@@ -55,7 +55,9 @@ says which of three things went wrong:
   dependencies is not, which is a half-finished install rather than anything to
   do with this package. Reinstall it with
   `python -m pip install --force-reinstall httpx`, or start from a fresh
-  virtual environment.
+  virtual environment. The same message names `datamermaid` when it is
+  `datamermaid` that is installed without its dependencies; the fix is the
+  same reinstall.
 - **`<package> is installed for this interpreter, but importing it failed
   anyway`** — nothing is missing; the import got as far as the package and
   failed on what it found. Normally that means the installed `datamermaid` is

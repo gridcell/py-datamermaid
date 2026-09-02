@@ -18,6 +18,7 @@ exercised directly, since no test can run an example in a broken environment.
 from __future__ import annotations
 
 import ast
+import doctest
 import importlib.util
 import os
 import re
@@ -172,9 +173,12 @@ def test_example_explains_a_missing_install(path: Path):
 def test_example_reports_a_broken_install_even_with_a_safe_path(tmp_path):
     """End to end: the reported failure, run the way the reporter ran it.
 
-    ``python -P`` (equivalently ``PYTHONSAFEPATH=1``) keeps the script's own
+    ``PYTHONSAFEPATH=1`` (equivalently ``python -P``) keeps the script's own
     directory off ``sys.path``, which is where ``_preflight`` lives -- the guard
     has to put it back or it fails in place of the error it exists to explain.
+    The environment variable rather than the flag because ``-P`` only exists
+    from Python 3.11 and the supported floor is 3.10, where it is an unknown
+    option; there the variable is ignored and the test still checks the message.
     """
     httpx = tmp_path / "httpx"
     httpx.mkdir()
@@ -182,10 +186,10 @@ def test_example_reports_a_broken_install_even_with_a_safe_path(tmp_path):
     (httpx / "_urls.py").write_text("import not_a_real_idna\n")
 
     result = subprocess.run(
-        [sys.executable, "-P", str(EXAMPLES / "quickstart.py")],
+        [sys.executable, str(EXAMPLES / "quickstart.py")],
         capture_output=True,
         text=True,
-        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        env={**os.environ, "PYTHONPATH": str(tmp_path), "PYTHONSAFEPATH": "1"},
     )
 
     assert result.returncode == 1, result.stdout
@@ -280,6 +284,30 @@ def test_preflight_reports_an_import_error_that_names_no_module(preflight, tmp_p
     assert message.startswith("mismatched is installed for this interpreter")
     assert "which is missing" not in message
     assert "binary incompatibility" in message
+
+
+def test_preflight_reports_a_broken_install_of_datamermaid_itself(preflight, monkeypatch):
+    """The same case, but the half-installed package is ``datamermaid``.
+
+    ``--doctest-modules`` collects ``src/datamermaid`` and ``tests``, never
+    ``examples/``, so nothing else would notice the message telling the reader
+    that a broken ``datamermaid`` has nothing to do with ``datamermaid``.
+    """
+    error = ModuleNotFoundError("No module named 'pandas'", name="pandas")
+    monkeypatch.setattr(preflight, "_importing_package", lambda exc: preflight.DISTRIBUTION)
+
+    message = str(preflight.missing_dependency(error))
+
+    assert "rather than anything to do" not in message
+    assert "half-finished install of datamermaid itself" in message
+    assert f"{sys.executable} -m pip install --force-reinstall datamermaid" in message
+
+
+def test_preflight_doctests_run(preflight):
+    """``testpaths`` excludes ``examples/``, so collect its doctests by hand."""
+    results = doctest.testmod(preflight, optionflags=doctest.ELLIPSIS, verbose=False)
+    assert results.attempted, "no doctests found in examples/_preflight.py"
+    assert not results.failed
 
 
 def test_preflight_needs_only_the_standard_library():

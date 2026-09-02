@@ -161,6 +161,15 @@ More at {TROUBLESHOOTING}."""
 
 def _broken_install(package: str, missing: str, error: ImportError) -> str:
     """The package is present but unusable: reinstall it with its dependencies."""
+    diagnosis = (
+        f"That is a half-finished install of {DISTRIBUTION} itself: it is there, but\n"
+        f"{missing} -- which it depends on -- is not."
+        if package == DISTRIBUTION
+        else (
+            f"That is a half-finished install of {package} rather than anything to do\n"
+            f"with {DISTRIBUTION}."
+        )
+    )
     return f"""\
 {package} is installed for this interpreter but cannot be imported: it needs
 {missing}, which is missing.
@@ -170,8 +179,7 @@ def _broken_install(package: str, missing: str, error: ImportError) -> str:
     missing:     {missing}
     error:       {error}
 
-That is a half-finished install of {package} rather than anything to do with
-{DISTRIBUTION}.  Reinstall it, dependencies included:
+{diagnosis}  Reinstall it, dependencies included:
 
     {sys.executable} -m pip install --force-reinstall {package}
 
