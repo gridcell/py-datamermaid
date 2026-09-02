@@ -46,6 +46,8 @@ REFERENCE_ENDPOINTS = (
     "fishspecies",
     "benthicattributes",
     "fishgroupings",
+    "invertattributes",
+    "invertspecies",
 )
 
 #: Global endpoints known to answer a plain paginated GET.  :func:`get_endpoint`
@@ -63,6 +65,8 @@ KNOWN_ENDPOINTS = frozenset(
         "fishgroupings",
         "fishsizes",
         "fishspecies",
+        "invertattributes",
+        "invertspecies",
         "managements",
         "projects",
         "projecttags",
@@ -219,8 +223,8 @@ def get_reference(
     ----------
     reference:
         Which table: one of :data:`REFERENCE_ENDPOINTS` (``"fishfamilies"``,
-        ``"fishgenera"``, ``"fishspecies"``, ``"benthicattributes"`` or
-        ``"fishgroupings"``).
+        ``"fishgenera"``, ``"fishspecies"``, ``"benthicattributes"``,
+        ``"fishgroupings"``, ``"invertattributes"`` or ``"invertspecies"``).
     limit:
         Maximum number of records to return.  ``None`` returns the whole table.
     client:

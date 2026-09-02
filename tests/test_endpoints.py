@@ -246,6 +246,27 @@ class TestGetReference:
         assert list(df["name"]) == ["Acanthuridae"]
 
     @respx.mock
+    @pytest.mark.parametrize("reference", ["invertattributes", "invertspecies"])
+    def test_invertebrate_tables_are_requested_at_the_api_root(self, client, reference):
+        route = respx.get(global_url(reference)).mock(
+            return_value=httpx.Response(200, json=page([{"id": "1", "name": "Diadema"}]))
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            df = get_reference(reference, client=client)
+
+        assert route.called
+        assert list(df["name"]) == ["Diadema"]
+        # They are known endpoints, so nothing warns about a possible typo.
+        assert [str(warning.message) for warning in caught] == []
+
+    @pytest.mark.parametrize("reference", ["invertattributes", "invertspecies"])
+    def test_invertebrate_tables_are_documented_and_known(self, reference):
+        assert reference in REFERENCE_ENDPOINTS
+        assert reference in KNOWN_ENDPOINTS
+
+    @respx.mock
     def test_limit_is_honoured(self, client):
         route = respx.get(global_url("fishspecies")).mock(
             return_value=httpx.Response(
