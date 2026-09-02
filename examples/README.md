@@ -48,7 +48,7 @@ uv run examples/quickstart.py
 needs neither network nor an account, and the test suite runs it. Every other
 example talks to the real API at <https://api.datamermaid.org/v1/>.
 
-Python 3.10 or newer; CI runs the suite on 3.10 and 3.12.
+Python 3.10 or newer; CI runs the suite on 3.10, 3.11, 3.12 and 3.13.
 
 ### The notebook
 

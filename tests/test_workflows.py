@@ -6,6 +6,8 @@ regressed before: a marketplace action pinned to a major that still ships
 Node 20 (the runners warn about it and will eventually refuse), and a deploy
 job that reaches ``actions/deploy-pages`` without Pages having been switched to
 "GitHub Actions" as its source, which answers 404 and reads as a broken build.
+The CI workflow gets one guard of its own: its test matrix has to name every
+Python minor ``pyproject.toml``'s classifiers advertise.
 
 The files are parsed as text, like ``mkdocs.yml`` in ``tests/test_docs.py``:
 the offline suite has no PyYAML, and the shapes these workflows use are simple
@@ -100,3 +102,23 @@ def test_docs_workflow_still_gates_pull_requests(docs_jobs):
     assert "mkdocs build --strict" in build
     # The build itself is unconditional; only the upload is main-only.
     assert not re.search(r"^    if:", build, re.M)
+
+
+def test_test_matrix_covers_every_advertised_python(workflows):
+    """`pyproject.toml`'s classifiers are a promise; the matrix is the proof."""
+    ci_jobs = _jobs(workflows["ci.yml"])
+    matrix = re.search(r"python-version:\s*\[([^\]]*)\]", ci_jobs["test"])
+    assert matrix, "ci.yml's test job has no python-version matrix"
+    tested = set(re.findall(r"\d+\.\d+", matrix.group(1)))
+    pyproject = (WORKFLOWS.parents[1] / "pyproject.toml").read_text()
+    advertised = set(re.findall(r'"Programming Language :: Python :: (\d+\.\d+)"', pyproject))
+    assert advertised, "pyproject.toml classifies no Python minor versions"
+    assert tested == advertised, (
+        f"CI tests {sorted(tested)} but pyproject.toml advertises {sorted(advertised)}"
+    )
+
+
+def test_test_matrix_reports_every_version(workflows):
+    """`fail-fast: false`: one broken interpreter must not hide the others."""
+    test = _jobs(workflows["ci.yml"])["test"]
+    assert "fail-fast: false" in test
