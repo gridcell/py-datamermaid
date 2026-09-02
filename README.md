@@ -56,7 +56,8 @@ uv sync --extra dev                 # from a checkout: .venv with the package an
 ```
 
 Python 3.10 or newer; the only runtime dependencies are `httpx` and `pandas`.
-CI runs the test suite on 3.10, 3.11, 3.12 and 3.13, under uv.
+CI runs the test suite on 3.10, 3.11, 3.12 and 3.13 under uv on Linux, and on
+3.12 on Windows and macOS as well.
 
 `python -m pip` rather than a bare `pip` on purpose: it installs into the
 interpreter you name, whereas `pip` may belong to another one — the usual
@@ -642,7 +643,8 @@ uv run python examples/quickstart.py
 `--extra dev` on the `uv run` calls as well as the `uv sync`: `uv run` syncs
 before it runs, and without the extra it is entitled to take pytest and ruff
 back out again. Adding `--python 3.10` re-syncs against another interpreter,
-fetching it if need be, which is how to reproduce the CI matrix locally. No
+fetching it if need be, which is how to reproduce the version half of the CI
+matrix locally; the Windows and macOS legs only run on the runners. No
 `uv.lock` is committed: this is a library with deliberately loose pins, and a
 lockfile would pin the one resolution the matrix exists to vary.
 
@@ -685,9 +687,12 @@ parses everything in
 than executed — and exercises `examples/_preflight.py`, the helper that turns a
 missing or half-installed dependency into an actionable message.
 `tests/test_workflows.py` reads the workflows themselves, so a Node 20 action
-pin, an ungated Pages deploy, or a test matrix that has fallen behind the
-supported Python versions fails the suite. CI runs the same commands on
-Python 3.10, 3.11, 3.12 and 3.13.
+pin, an ungated Pages deploy, a test matrix that has fallen behind the
+supported Python versions, or a lost Windows or macOS runner fails the suite.
+CI runs the same commands on Python 3.10, 3.11, 3.12 and 3.13 on Linux, and
+once more on 3.12 on Windows and on macOS: the package is pure Python, so one
+interpreter per platform is enough to catch a path, permission or newline
+assumption. Linting stays a single Linux job.
 
 User-visible change goes in
 [CHANGELOG.md](https://github.com/gridcell/py-datamermaid/blob/main/CHANGELOG.md),

@@ -17,6 +17,10 @@ concurrency:
 # setup-uv is pinned by commit rather than by tag like the actions above it:
 # it publishes no floating major tag past v7, and the comment is the form
 # Dependabot updates.
+# Linux carries the Python matrix; Windows and macOS get one representative
+# interpreter each, which is enough to catch a path, permission or newline
+# assumption without quadrupling the run. Lint stays a single Linux job: ruff
+# reads the same files on every runner, so repeating it proves nothing.
 jobs:
   lint:
     name: Lint
@@ -35,12 +39,22 @@ jobs:
         run: uv run --extra dev ruff format --check .
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        # `include` entries that match no combination are appended as extra
+        # jobs rather than multiplied into the matrix, so the version list
+        # below stays Linux-only and the other two runners stay at one job
+        # each.
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
