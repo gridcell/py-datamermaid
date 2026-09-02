@@ -23,14 +23,43 @@ signing in, then everything that needs a login.
 
 ## Running them
 
+An example runs against whichever interpreter you invoke it with, so
+`datamermaid` has to be installed for *that* interpreter. Spelling the install
+`python -m pip` rather than a bare `pip` is what guarantees it:
+
 ```bash
-pip install -e .            # or: pip install datamermaid
+python -m venv .venv && source .venv/bin/activate   # optional, but the tidiest
+python -m pip install -e .          # or: python -m pip install datamermaid
 python examples/quickstart.py
 ```
 
 `quickstart.py` answers every request from an in-process mock transport, so it
 needs neither network nor an account, and the test suite runs it. Every other
 example talks to the real API at <https://api.datamermaid.org/v1/>.
+
+Python 3.10 or newer; CI runs the suite on 3.10 and 3.12.
+
+### Troubleshooting
+
+Every example checks its imports before doing anything, so a broken install
+reports itself in one message naming your interpreter and the fix. Two things
+go wrong:
+
+- **`datamermaid is not installed for this interpreter`** — the package is
+  missing from the interpreter you ran. Usually a bare `pip` installed it into
+  a *different* one; `python -m pip install -e .` cannot miss.
+- **`httpx is installed for this interpreter but cannot be imported: it needs
+  idna, which is missing`** — `httpx` (or `pandas`) is there but one of its own
+  dependencies is not, which is a half-finished install rather than anything to
+  do with this package. Reinstall it with
+  `python -m pip install --force-reinstall httpx`, or start from a fresh
+  virtual environment.
+
+Without that check the same situation surfaces as a traceback ending in
+`ModuleNotFoundError: No module named 'idna'`, several frames inside `httpx`
+and with no mention of what to install. [`_preflight.py`](_preflight.py) is the
+helper that writes those messages; it is not an example, and it deliberately
+imports nothing beyond the standard library.
 
 ## Credentials
 

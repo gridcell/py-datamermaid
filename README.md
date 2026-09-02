@@ -28,17 +28,25 @@ data → pull reference data**. Public data needs no account.
 ## Install
 
 ```bash
-pip install datamermaid
+python -m pip install datamermaid
 ```
 
 Or, from a checkout of this repository:
 
 ```bash
-pip install -e .          # the package
-pip install -e ".[dev]"   # plus pytest, respx and ruff
+python -m pip install -e .          # the package
+python -m pip install -e ".[dev]"   # plus pytest, respx and ruff
 ```
 
 Python 3.10 or newer; the only runtime dependencies are `httpx` and `pandas`.
+CI runs the test suite on 3.10 and 3.12.
+
+`python -m pip` rather than a bare `pip` on purpose: it installs into the
+interpreter you name, whereas `pip` may belong to another one — the usual
+reason an import fails for a package that looks installed. The examples check
+for this and say so; see
+[Troubleshooting](examples/README.md#troubleshooting) if one of them reports a
+missing module.
 
 ## Authentication
 
@@ -180,6 +188,12 @@ python examples/07_project_data.py      # survey data, by method and level
 
 [`examples/README.md`](examples/README.md) indexes them and says which need a
 login. Only `quickstart.py` runs offline; the rest talk to the real API.
+
+Each script verifies that `datamermaid` and its dependencies are importable
+before it does anything, so running one against an interpreter that lacks them
+prints what to install rather than a traceback from inside `httpx`. The cases
+and their fixes are in
+[Troubleshooting](examples/README.md#troubleshooting).
 
 ## Finding projects
 
@@ -532,7 +546,7 @@ Python-only additions: `MermaidClient` / `default_client()` /
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 pytest                    # offline; all HTTP is mocked with respx
 ruff check .
 ruff format --check .
@@ -543,8 +557,10 @@ python examples/quickstart.py
 migration table and `get_project_data()` matrix agree with the package, so
 changes to either need to be made in both places. `tests/test_examples.py`
 parses everything in [`examples/`](examples/README.md) — the scripts there talk
-to the real API, so they are checked for drift rather than executed. CI runs
-the same commands on Python 3.10 and 3.12.
+to the real API, so they are checked for drift rather than executed — and
+exercises `examples/_preflight.py`, the helper that turns a missing or
+half-installed dependency into an actionable message. CI runs the same commands
+on Python 3.10 and 3.12.
 
 ## License
 
