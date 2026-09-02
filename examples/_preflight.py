@@ -12,27 +12,38 @@ inside the failing package, and the traceback says nothing about what to do::
 
 So the examples wrap their third-party imports in ``try``/``except
 ImportError`` and hand the exception to :func:`missing_dependency`, which
-returns a ``SystemExit`` naming the interpreter, the module that is missing,
-and the command that fixes it.  Raise it with ``from None`` so the message
-replaces the traceback rather than following it::
+returns a ``SystemExit`` naming the interpreter, what went wrong, and the
+command that fixes it.  Raise it with ``from None`` so the message replaces the
+traceback rather than following it::
 
     try:
         import datamermaid
     except ImportError as exc:
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).parent))
         from _preflight import missing_dependency
 
         raise missing_dependency(exc) from None
 
+Three things can go wrong, and they need three different fixes: the package is
+absent (install it), the package is present but its own dependencies are not
+(reinstall it), or the package imported and then refused the name the example
+asked for (a version mismatch, so upgrade rather than reinstall).
+
 This module uses nothing outside the standard library and does no work when
 imported, so it cannot itself be the thing that fails.  ``python
-examples/<script>.py`` puts this directory on ``sys.path``, which is how the
-examples find it; a script copied out of this directory should lose its
-``except`` clause on the way out.
+examples/<script>.py`` puts this directory on ``sys.path``, which is normally
+how the examples find it; the ``sys.path.insert`` above covers ``python -P``
+and ``PYTHONSAFEPATH=1``, which do not.  A script copied out of this directory
+should lose its ``except`` clause on the way out.
 """
 
 from __future__ import annotations
 
 import sys
+from types import TracebackType
 
 __all__ = ["missing_dependency"]
 
@@ -51,9 +62,11 @@ _IMPORT_MACHINERY = frozenset({"importlib", "runpy"})
 def missing_dependency(error: ImportError) -> SystemExit:
     """Return a ``SystemExit`` explaining an import failure in an example.
 
-    Distinguishes the two cases that look identical in a traceback: a package
-    that is not installed at all, and a package that is installed but whose own
-    dependencies are not -- the second needs a reinstall, not an install.
+    Distinguishes the three cases that look alike in a traceback: a package
+    that is not installed at all, a package that is installed but whose own
+    dependencies are not, and a package that imports but does not provide the
+    name the example asked for.  They need an install, a reinstall and an
+    upgrade respectively, so the message says which.
 
     Parameters
     ----------
@@ -76,12 +89,17 @@ def missing_dependency(error: ImportError) -> SystemExit:
     datamermaid is not installed for this interpreter.
     ...
     """
-    missing = error.name or "the package this example needs"
     package = _importing_package(error)
 
-    if isinstance(error, ModuleNotFoundError) and package in (None, missing):
+    if not isinstance(error, ModuleNotFoundError):
+        # Nothing is missing: the import got far enough to fail on what it
+        # found, e.g. `from datamermaid import <name a different version has>`.
+        return SystemExit(_import_failed(package or error.name, error))
+
+    missing = error.name or "the package this example needs"
+    if package in (None, missing):
         return SystemExit(_not_installed(missing))
-    return SystemExit(_broken_install(package or missing, missing, error))
+    return SystemExit(_broken_install(package, missing, error))
 
 
 def _interpreter() -> str:
@@ -96,17 +114,30 @@ def _importing_package(error: ImportError) -> str | None:
     ``import httpx`` failing on ``idna`` leaves ``httpx``'s own modules on the
     traceback; the outermost of them names the package that is installed but
     unusable.  ``None`` when the traceback holds only the example's own frame,
-    which is what a package that is simply absent looks like.
+    which is what a package that is simply absent looks like -- and also what
+    ``from datamermaid import <missing name>`` looks like, since the import
+    machinery raises that one in the caller's frame.
     """
+    frame = error.__traceback__
+    if frame is None:
+        return None
     # The first frame ran the failing ``import`` statement, so it belongs to the
-    # example, not to anything being imported.  Everything after it does.
-    frame = error.__traceback__.tb_next if error.__traceback__ is not None else None
+    # example, not to anything being imported -- and neither does any later
+    # frame in the same module, which is what ``exec`` of an import adds.
+    caller = _root(frame)
+    frame = frame.tb_next
     while frame is not None:
-        root = frame.tb_frame.f_globals.get("__name__", "").split(".")[0]
-        if root and root not in _IMPORT_MACHINERY and not root.startswith("_frozen"):
+        root = _root(frame)
+        if root and root != caller and root not in _IMPORT_MACHINERY:
             return root
         frame = frame.tb_next
     return None
+
+
+def _root(frame: TracebackType) -> str:
+    """The top-level package a traceback frame belongs to, ``""`` if it has none."""
+    root = frame.tb_frame.f_globals.get("__name__", "").split(".")[0]
+    return "" if root.startswith("_frozen") else root
 
 
 def _not_installed(missing: str) -> str:
@@ -149,5 +180,43 @@ there is left over from an earlier install:
 
     {sys.executable} -m venv .venv
     .venv/bin/python -m pip install {DISTRIBUTION}    # .venv\\Scripts\\python.exe on Windows
+
+More at {TROUBLESHOOTING}."""
+
+
+def _import_failed(package: str | None, error: ImportError) -> str:
+    """The import failed on something other than a missing module.
+
+    Two ways that happens: the package is a different release than the example
+    expects and does not have the name it asked for, or the package disagrees
+    with a compiled dependency.  The first wants an upgrade, the second a
+    matched pair -- neither wants the reinstall :func:`_broken_install`
+    recommends, so the error itself is quoted and both are named.
+    """
+    subject = package or "A package this example needs"
+    target = package or DISTRIBUTION
+    checkout = (
+        f"\n    {sys.executable} -m pip install -e .    # from a checkout of this repository"
+        if target == DISTRIBUTION
+        else ""
+    )
+    return f"""\
+{subject} is installed for this interpreter, but importing it failed anyway --
+and not because anything is missing.
+
+    interpreter: {_interpreter()}
+    package:     {package or "not named by the error below"}
+    error:       {error}
+
+Read that error.  If it says a name cannot be imported, the installed {target}
+is a different release than these examples, which are written against this
+repository; upgrade it rather than reinstalling it:
+
+    {sys.executable} -m pip show {target}
+    {sys.executable} -m pip install --upgrade {target}{checkout}
+
+If instead it mentions a compiled extension or a binary incompatibility, two
+installed packages disagree with each other; reinstall {target} together with
+whatever the error names.
 
 More at {TROUBLESHOOTING}."""

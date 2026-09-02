@@ -42,10 +42,12 @@ Python 3.10 or newer; CI runs the suite on 3.10 and 3.12.
 ### Troubleshooting
 
 Every example checks its imports before doing anything, so a broken install
-reports itself in one message naming your interpreter and the fix. Two things
-go wrong:
+reports itself in one message naming your interpreter and the fix. Each message
+opens with the package that failed — whichever import came first, so a clean
+interpreter reports `httpx` or `pandas` rather than `datamermaid` — and then
+says which of three things went wrong:
 
-- **`datamermaid is not installed for this interpreter`** — the package is
+- **`<package> is not installed for this interpreter`** — the package is
   missing from the interpreter you ran. Usually a bare `pip` installed it into
   a *different* one; `python -m pip install -e .` cannot miss.
 - **`httpx is installed for this interpreter but cannot be imported: it needs
@@ -54,6 +56,12 @@ go wrong:
   do with this package. Reinstall it with
   `python -m pip install --force-reinstall httpx`, or start from a fresh
   virtual environment.
+- **`<package> is installed for this interpreter, but importing it failed
+  anyway`** — nothing is missing; the import got as far as the package and
+  failed on what it found. Normally that means the installed `datamermaid` is
+  an older release than the example, which is written against this checkout, so
+  `python -m pip install --upgrade datamermaid` (or `-e .`) is the fix rather
+  than a reinstall. The quoted error says which name it could not import.
 
 Without that check the same situation surfaces as a traceback ending in
 `ModuleNotFoundError: No module named 'idna'`, several frames inside `httpx`

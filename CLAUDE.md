@@ -103,9 +103,12 @@ examples/NN_*.py       numbered, runnable scripts per capability; they hit the r
 examples/_preflight.py stdlib-only helper: every example wraps its third-party
                        imports in try/except ImportError and raises
                        missing_dependency(exc), which names the interpreter and
-                       the install/reinstall command instead of letting a
-                       traceback surface from inside httpx.  `_`-prefixed files
-                       in examples/ are helpers, not examples.
+                       the fix -- install (absent), reinstall (its own deps are
+                       absent) or upgrade (imported, wrong version) -- instead
+                       of letting a traceback surface from inside httpx.  The
+                       handler puts examples/ on sys.path first, so it works
+                       under `python -P` too.  `_`-prefixed files in examples/
+                       are helpers, not examples.
 ```
 
 Request flow: a public function resolves its `client=`/`token=` arguments via

@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -157,9 +159,41 @@ def test_example_explains_a_missing_install(path: Path):
     assert "datamermaid" in _imported_packages(guard.body), (
         f"{path.name} does not import datamermaid inside its import guard"
     )
-    assert "missing_dependency" in ast.dump(ast.Module(body=guard.handlers, type_ignores=[])), (
+    handlers = ast.unparse(ast.Module(body=guard.handlers, type_ignores=[]))
+    assert "missing_dependency" in handlers, (
         f"{path.name} catches ImportError without calling _preflight.missing_dependency"
     )
+    assert "sys.path" in handlers, (
+        f"{path.name} imports _preflight without putting its directory on sys.path, "
+        "so the handler itself would fail under `python -P` / PYTHONSAFEPATH=1"
+    )
+
+
+def test_example_reports_a_broken_install_even_with_a_safe_path(tmp_path):
+    """End to end: the reported failure, run the way the reporter ran it.
+
+    ``python -P`` (equivalently ``PYTHONSAFEPATH=1``) keeps the script's own
+    directory off ``sys.path``, which is where ``_preflight`` lives -- the guard
+    has to put it back or it fails in place of the error it exists to explain.
+    """
+    httpx = tmp_path / "httpx"
+    httpx.mkdir()
+    (httpx / "__init__.py").write_text("from . import _urls\n")
+    (httpx / "_urls.py").write_text("import not_a_real_idna\n")
+
+    result = subprocess.run(
+        [sys.executable, "-P", str(EXAMPLES / "quickstart.py")],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert "No module named '_preflight'" not in result.stderr
+    assert "httpx is installed for this interpreter but cannot be imported" in result.stderr
+    assert "not_a_real_idna, which is missing" in result.stderr
+    # The message replaces the traceback rather than trailing it.
+    assert "Traceback" not in result.stderr
 
 
 def test_preflight_reports_a_package_that_is_not_installed(preflight):
@@ -168,6 +202,8 @@ def test_preflight_reports_a_package_that_is_not_installed(preflight):
         import definitely_not_a_module  # noqa: F401
     except ImportError as exc:
         message = str(preflight.missing_dependency(exc))
+    else:
+        pytest.fail("definitely_not_a_module imported; the test needs a name that cannot")
 
     assert "definitely_not_a_module is not installed" in message
     assert sys.executable in message
@@ -186,6 +222,8 @@ def test_preflight_reports_a_package_whose_own_dependency_is_missing(preflight, 
         import halfinstalled  # noqa: F401
     except ImportError as exc:
         message = str(preflight.missing_dependency(exc))
+    else:
+        pytest.fail("halfinstalled imported; it is built here to fail")
     finally:
         sys.path.remove(str(tmp_path))
         sys.modules.pop("halfinstalled", None)
@@ -196,10 +234,58 @@ def test_preflight_reports_a_package_whose_own_dependency_is_missing(preflight, 
     assert f"{sys.executable} -m pip install --force-reinstall halfinstalled" in message
 
 
+def test_preflight_reports_a_name_a_different_version_does_not_have(preflight):
+    """An ImportError that is not a missing module: an upgrade, not a reinstall.
+
+    This is what an example run against an older release of the package looks
+    like -- ``from datamermaid import <name it does not export>``.  Saying that
+    datamermaid "needs datamermaid, which is missing" would be nonsense.
+    """
+    try:
+        from datamermaid import NOT_A_REAL_NAME  # noqa: F401
+    except ImportError as exc:
+        message = str(preflight.missing_dependency(exc))
+    else:
+        pytest.fail("datamermaid exports NOT_A_REAL_NAME; pick a name it does not")
+
+    assert message.startswith("datamermaid is installed for this interpreter, but importing it")
+    assert "which is missing" not in message
+    assert "half-finished install" not in message
+    assert "cannot import name 'NOT_A_REAL_NAME'" in message
+    assert f"{sys.executable} -m pip install --upgrade datamermaid" in message
+
+
+def test_preflight_reports_an_import_error_that_names_no_module(preflight, tmp_path):
+    """The other non-ModuleNotFoundError: a package at odds with a compiled one."""
+    package = tmp_path / "mismatched"
+    package.mkdir()
+    (package / "__init__.py").write_text("from . import _core\n")
+    (package / "_core.py").write_text(
+        'raise ImportError("numpy.dtype size changed, may indicate binary incompatibility")\n'
+    )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import mismatched  # noqa: F401
+    except ImportError as exc:
+        assert exc.name is None, "the point of this case is an ImportError with no module name"
+        message = str(preflight.missing_dependency(exc))
+    else:
+        pytest.fail("mismatched imported; it is built here to fail")
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("mismatched", None)
+
+    # The package is named from the traceback, never described as needing itself.
+    assert message.startswith("mismatched is installed for this interpreter")
+    assert "which is missing" not in message
+    assert "binary incompatibility" in message
+
+
 def test_preflight_needs_only_the_standard_library():
     """It reports broken installs, so it must not depend on anything installable."""
     tree = ast.parse((EXAMPLES / "_preflight.py").read_text())
-    assert _imported_packages(tree.body) == {"__future__", "sys"}
+    assert _imported_packages(tree.body) <= set(sys.stdlib_module_names)
 
 
 def test_examples_readme_indexes_every_script():
