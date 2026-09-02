@@ -297,5 +297,9 @@ before any request when none is found.
   A new module needs a `docs/api/` page, and a new public name needs to be in
   its own module's `__all__` as well as the package's, or `filters: public`
   leaves it off the site.
+- User-visible changes go in `CHANGELOG.md` under `## [Unreleased]`, in Keep a
+  Changelog style: a new or renamed public function, a change in behaviour or
+  arguments, a bug fix, a breaking change. Refactors and test-only work do
+  not. At release, the `[Unreleased]` entries move into a version section.
 - `CLAUDE.md` and `AGENTS.md` are independent files: mirror substantive edits
   to both.
