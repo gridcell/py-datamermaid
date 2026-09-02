@@ -10,22 +10,29 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# uv provides the interpreter as well as the environment, so there is no
+# setup-python step: `python-version` below is what uv installs and pins.
+# No uv.lock is committed (see .gitignore), so every run resolves the loose
+# pins in pyproject.toml afresh -- which is the point of running the matrix.
+# setup-uv is pinned by commit rather than by tag like the actions above it:
+# it publishes no floating major tag past v7, and the comment is the form
+# Dependabot updates.
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.12"
-          cache: pip
+          enable-cache: true
       - name: Install
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+        run: uv sync --extra dev
       - name: ruff check
-        run: ruff check .
+        run: uv run --extra dev ruff check .
       - name: ruff format --check
-        run: ruff format --check .
+        run: uv run --extra dev ruff format --check .
 
   test:
     name: Test (Python ${{ matrix.python-version }})
@@ -36,11 +43,11 @@ jobs:
         python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
+          enable-cache: true
       - name: Install
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+        run: uv sync --extra dev
       - name: pytest
-        run: pytest
+        run: uv run --extra dev pytest

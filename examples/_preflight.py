@@ -54,6 +54,18 @@ DISTRIBUTION = "datamermaid"
 #: Where the longer version of this advice lives, for the message to point at.
 TROUBLESHOOTING = 'examples/README.md ("Troubleshooting")'
 
+#: The way out that does not involve choosing an interpreter at all.  Every
+#: message here exists because the example ran against one environment while
+#: the package went into another; `uv run` builds the environment and runs the
+#: script in it, so the two cannot disagree.
+_UV_ALTERNATIVE = """\
+Or, from a checkout of this repository, hand the whole question to uv
+(<https://docs.astral.sh/uv/>) -- it resolves, installs and runs in one step,
+against an interpreter it fetches itself if it has to:
+
+    uv sync
+    uv run examples/<script>.py"""
+
 #: Frames that belong to the import machinery rather than to the package whose
 #: import failed.
 _IMPORT_MACHINERY = frozenset({"importlib", "runpy"})
@@ -156,6 +168,8 @@ reason a package looks installed and still cannot be imported.
     {sys.executable} -m pip install {DISTRIBUTION}
     {sys.executable} -m pip install -e .    # from a checkout of this repository
 
+{_UV_ALTERNATIVE}
+
 More at {TROUBLESHOOTING}."""
 
 
@@ -188,6 +202,8 @@ there is left over from an earlier install:
 
     {sys.executable} -m venv .venv
     .venv/bin/python -m pip install {DISTRIBUTION}    # .venv\\Scripts\\python.exe on Windows
+
+{_UV_ALTERNATIVE}
 
 More at {TROUBLESHOOTING}."""
 

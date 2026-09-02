@@ -38,15 +38,25 @@ python -m pip install -e .          # the package
 python -m pip install -e ".[dev]"   # plus pytest, respx and ruff
 ```
 
+Or with [uv](https://docs.astral.sh/uv/), which needs no interpreter of its own
+and will fetch one:
+
+```bash
+uv add datamermaid                  # into a uv project
+uv pip install datamermaid          # into the active environment
+uv sync --extra dev                 # from a checkout: .venv with the package and its dev tools
+```
+
 Python 3.10 or newer; the only runtime dependencies are `httpx` and `pandas`.
-CI runs the test suite on 3.10 and 3.12.
+CI runs the test suite on 3.10 and 3.12, under uv.
 
 `python -m pip` rather than a bare `pip` on purpose: it installs into the
 interpreter you name, whereas `pip` may belong to another one — the usual
 reason an import fails for a package that looks installed. The examples check
 for this and say so; see
 [Troubleshooting](examples/README.md#troubleshooting) if one of them reports a
-missing module.
+missing module. `uv run` sidesteps the question entirely: it runs whatever it
+just installed.
 
 ## Authentication
 
@@ -552,6 +562,25 @@ ruff check .
 ruff format --check .
 python examples/quickstart.py
 ```
+
+The same thing under [uv](https://docs.astral.sh/uv/), which is what CI runs.
+`uv sync` builds a `.venv` holding the checkout (editable) plus pytest, respx
+and ruff, and `uv run` uses it without anything being activated:
+
+```bash
+uv sync --extra dev
+uv run --extra dev pytest
+uv run --extra dev ruff check .
+uv run --extra dev ruff format --check .
+uv run python examples/quickstart.py
+```
+
+`--extra dev` on the `uv run` calls as well as the `uv sync`: `uv run` syncs
+before it runs, and without the extra it is entitled to take pytest and ruff
+back out again. Adding `--python 3.10` re-syncs against another interpreter,
+fetching it if need be, which is how to reproduce the CI matrix locally. No
+`uv.lock` is committed: this is a library with deliberately loose pins, and a
+lockfile would pin the one resolution the matrix exists to vary.
 
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so
