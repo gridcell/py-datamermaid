@@ -384,8 +384,9 @@ fish_families = datamermaid.get_reference("fishfamilies")
 ```
 
 `get_reference()` accepts `"fishfamilies"`, `"fishgenera"`, `"fishspecies"`,
-`"benthicattributes"` or `"fishgroupings"` (`datamermaid.REFERENCE_ENDPOINTS`)
-and raises `ValueError` listing those options for anything else.
+`"benthicattributes"`, `"fishgroupings"`, `"invertattributes"` or
+`"invertspecies"` (`datamermaid.REFERENCE_ENDPOINTS`) and raises `ValueError`
+listing those options for anything else.
 
 `get_choices()` returns MERMAID's controlled vocabularies as a dict of frames,
 one per vocabulary, and `countries()` pulls the country names out of it:
@@ -559,7 +560,7 @@ Every function mermaidr exports is listed here.
 | `mermaid_get_endpoint()` | `datamermaid.get_endpoint()` | Extra keyword arguments become query parameters. Unknown endpoints warn rather than error. |
 | `mermaid_get_sites()` | `datamermaid.get_sites()` | |
 | `mermaid_get_managements()` | `datamermaid.get_managements()` | |
-| `mermaid_get_reference()` | `datamermaid.get_reference()` | Same five reference tables (`REFERENCE_ENDPOINTS`). |
+| `mermaid_get_reference()` | `datamermaid.get_reference()` | Same seven reference tables (`REFERENCE_ENDPOINTS`), invertebrates included. |
 | `mermaid_get_summary_sampleevents()` | `datamermaid.get_summary_sampleevents()` | |
 | `mermaid_countries()` | `datamermaid.countries()` | A `list[str]`. `get_choices()` (internal in mermaidr) exposes every vocabulary as a `dict` of frames. |
 | `mermaid_import_get_template_and_options()` | `datamermaid.import_get_template_and_options()` | Returns a `(template, options)` tuple rather than one list with a `"Template"` entry. No `save=`; write the template with `template.to_csv()`. |
