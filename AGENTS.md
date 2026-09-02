@@ -148,7 +148,7 @@ uv run --extra dev pytest
 uv run --extra dev ruff check .
 uv run --extra dev ruff format --check .
 uv run python examples/quickstart.py
-uv run --python 3.10 --extra dev pytest   # the other half of the CI matrix
+uv run --python 3.10 --extra dev pytest   # another leg of the CI matrix
 ```
 
 The suite never needs marimo -- `examples/09_marimo_notebook.py` is parsed like
@@ -185,16 +185,18 @@ on purpose — the pins are loose and the matrix is meant to vary them — so
 nothing here takes `--frozen`.
 
 CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
-`pytest` under uv on Python 3.10 and 3.12. All three must pass; there is no
-network in tests, so never add a test that hits `api.datamermaid.org`.
+`pytest` under uv on Python 3.10, 3.11, 3.12 and 3.13. All three must pass;
+there is no network in tests, so never add a test that hits
+`api.datamermaid.org`.
 `.github/workflows/docs.yml` is separate: it builds the site with `--strict` on
 every pull request and, on `main`, deploys it to GitHub Pages.  Publishing needs
 Settings -> Pages -> Source set to "GitHub Actions"; its `configure` job sets
 that itself with `actions/configure-pages` (`enablement: true`), and if the
 token is not allowed to, the deploy is skipped with a warning in the run summary
 rather than failing with a 404.  `tests/test_workflows.py` is the drift guard
-for both workflows: it keeps every `actions/*` pin on a Node 24 major and keeps
-the deploy gated on that `configure` job.
+for both workflows: it keeps every `actions/*` pin on a Node 24 major, keeps
+the deploy gated on that `configure` job, and keeps the test matrix equal to the
+Python versions `pyproject.toml` advertises.
 
 ## Architecture Overview
 
