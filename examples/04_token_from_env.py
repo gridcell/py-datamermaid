@@ -24,8 +24,19 @@ from __future__ import annotations
 
 import os
 
-import datamermaid
-from datamermaid import TOKEN_ENV_VAR, MermaidClient
+try:
+    import datamermaid
+    from datamermaid import TOKEN_ENV_VAR, MermaidClient
+except ImportError as exc:  # explain what to install, instead of a deep traceback
+    import sys
+    from pathlib import Path
+
+    # `python -P` and PYTHONSAFEPATH=1 keep this directory off sys.path, and the
+    # helper below lives in it; without this the handler would fail in its turn.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from _preflight import missing_dependency
+
+    raise missing_dependency(exc) from None
 
 
 def read_token() -> str:

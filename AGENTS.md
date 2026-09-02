@@ -132,7 +132,7 @@ Pure-Python package (`hatchling` build, `src/` layout). Python 3.10+; runtime
 dependencies are `httpx` and `pandas` only.
 
 ```bash
-pip install -e ".[dev]"      # package + pytest, respx, ruff
+python -m pip install -e ".[dev]"  # package + pytest, respx, ruff
 pytest                       # unit tests + doctests; fully offline (respx / MockTransport)
 ruff check .                 # lint (E, F, I, UP, B, W; line length 100)
 ruff format --check .        # formatting
@@ -168,6 +168,15 @@ tests/                 pytest + respx; fixtures/ holds trimmed real MERMAID CSVs
 examples/quickstart.py the README walk-through on an httpx.MockTransport (run by tests)
 examples/NN_*.py       numbered, runnable scripts per capability; they hit the real
                        API, so tests/test_examples.py only parses them (drift guard)
+examples/_preflight.py stdlib-only helper: every example wraps its third-party
+                       imports in try/except ImportError and raises
+                       missing_dependency(exc), which names the interpreter and
+                       the fix -- install (absent), reinstall (its own deps are
+                       absent) or upgrade (imported, wrong version) -- instead
+                       of letting a traceback surface from inside httpx.  The
+                       handler puts examples/ on sys.path first, so it works
+                       under `python -P` too.  `_`-prefixed files in examples/
+                       are helpers, not examples.
 ```
 
 Request flow: a public function resolves its `client=`/`token=` arguments via
