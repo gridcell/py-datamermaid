@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "datamermaid"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python client for the MERMAID coral reef monitoring API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ authors = [{ name = "Dustin Sampson", email = "dustin@sparkgeo.com" }]
 maintainers = [{ name = "Dustin Sampson", email = "dustin@sparkgeo.com" }]
 keywords = ["mermaid", "mermaidr", "coral", "reef", "marine", "ecology", "api", "datamermaid"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -68,6 +68,7 @@ Homepage = "https://github.com/gridcell/py-datamermaid"
 Documentation = "https://gridcell.github.io/py-datamermaid/"
 Source = "https://github.com/gridcell/py-datamermaid"
 Issues = "https://github.com/gridcell/py-datamermaid/issues"
+Changelog = "https://github.com/gridcell/py-datamermaid/blob/main/CHANGELOG.md"
 "MERMAID" = "https://datamermaid.org"
 "MERMAID API" = "https://api.datamermaid.org/v1/"
 "mermaidr (R)" = "https://github.com/data-mermaid/mermaidr"

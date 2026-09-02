@@ -132,6 +132,26 @@ def test_all_exports_exist():
         assert hasattr(datamermaid, name), name
 
 
+def test_every_export_is_documented_in_the_readme(readme):
+    """``__all__`` is the release contract, so the README has to describe it.
+
+    The migration table covers the ported ``mermaid_*`` functions and the
+    "Python-only additions" paragraph covers the rest; an export named by
+    neither -- nor anywhere else in the prose -- is a commitment nobody wrote
+    down.  ``__version__`` is the one exception: it is a package attribute
+    rather than part of the API surface.
+    """
+    undocumented = sorted(
+        name
+        for name in datamermaid.__all__
+        if name != "__version__"
+        and f"`{name}`" not in readme
+        and f"`{name}()`" not in readme
+        and f"datamermaid.{name}" not in readme
+    )
+    assert not undocumented, f"exported but absent from README.md: {undocumented}"
+
+
 def test_project_data_matrix_matches_construct_endpoints(readme):
     rows = _table_rows(_section(readme, "Project data"))
 

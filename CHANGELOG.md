@@ -10,6 +10,17 @@ Refactors, test-only work and internal cleanups do not belong here.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.2.0] - 2026-09-02
+
+The port is complete. `get_classification_labelmappings()` was the last
+mermaidr function without a Python counterpart, so every function mermaidr
+exports now maps to a `datamermaid` one and the README's migration table says
+so without qualification. The public surface is unchanged from 0.1.0 apart
+from the additions below: nothing was renamed or removed, so code written
+against 0.1.0 keeps working.
+
 ### Added
 
 - `get_classification_labelmappings()`, the last unported mermaidr function:
@@ -24,6 +35,14 @@ Refactors, test-only work and internal cleanups do not belong here.
   classifier's labels onto MERMAID benthic attributes) and
   `examples/12_gfcr_report.py` (`get_gfcr_report()`, which needs the `excel`
   extra).
+
+### Changed
+
+- The package is now Beta rather than Alpha (`Development Status :: 4 - Beta`).
+- CI runs the offline suite on every supported interpreter -- Python 3.10,
+  3.11, 3.12 and 3.13 -- rather than only 3.10 and 3.12, and adds a
+  `windows-latest` and a `macos-latest` leg on 3.12 so the package stays honest
+  about paths, file permissions and newlines.
 
 ## [0.1.0] - 2026-09-02
 
@@ -95,7 +114,7 @@ README's migration table maps the two surfaces name by name.
 
 <!--
 Link-reference definitions such as
-`[0.1.0]: https://github.com/gridcell/py-datamermaid/releases/tag/v0.1.0` are
+`[0.2.0]: https://github.com/gridcell/py-datamermaid/releases/tag/v0.2.0` are
 deliberately absent: there are no tags or releases to point at yet. Add them
 with the first tagged release, along with an [Unreleased] compare link.
 -->
