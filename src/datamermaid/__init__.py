@@ -93,7 +93,7 @@ from .project_endpoints import (
 from .projects import get_my_projects, get_projects, search_my_projects, search_projects
 from .reports import get_gfcr_report
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "API_BASE_URL",

@@ -263,5 +263,16 @@ before any request when none is found.
   Changelog style: a new or renamed public function, a change in behaviour or
   arguments, a bug fix, a breaking change. Refactors and test-only work do
   not. At release, the `[Unreleased]` entries move into a version section.
+- The version is written twice: `version` in `pyproject.toml` (hatchling reads
+  a static version) and `__version__` in `src/datamermaid/__init__.py`. Bump
+  both together, along with the `Development Status` classifier when the
+  maturity changes. `tests/test_packaging.py` fails when the two disagree, and
+  `tests/test_docs.py` fails when `CHANGELOG.md` has no section for the new
+  `__version__`. Tagging, building and uploading are manual steps outside the
+  repository.
+- Every name in the package's `__all__` has to be described in `README.md`,
+  either in the migration table or in the "Python-only additions" paragraph;
+  `tests/test_docs.py` enforces it, so an export is a documented commitment
+  rather than an accident.
 - `CLAUDE.md` and `AGENTS.md` are independent files: mirror substantive edits
   to both.
