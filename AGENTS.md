@@ -163,6 +163,16 @@ uv run --extra dev python examples/09_marimo_notebook.py  # serves it on 0.0.0.0
 The `notebook` extra is the same marimo pin for people who install the package
 rather than the checkout; it is what `datamermaid[notebook]` means.
 
+The `docs` extra is the MkDocs site (`mkdocs.yml`, `docs/`).  It is deliberately
+outside `dev`: the offline matrix never imports mkdocs, and `tests/test_docs.py`
+guards the site by reading `mkdocs.yml` and `docs/**/*.md` as text.
+
+```bash
+uv sync --extra docs
+uv run --extra docs mkdocs serve            # http://127.0.0.1:8000, live reload
+uv run --extra docs mkdocs build --strict   # what CI builds and deploys
+```
+
 `--extra dev` on `uv run` too: it syncs before running, and without the extra
 it may uninstall the dev tools. `uv.lock` and `.python-version` are gitignored
 on purpose — the pins are loose and the matrix is meant to vary them — so
@@ -171,6 +181,9 @@ nothing here takes `--frozen`.
 CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
 `pytest` under uv on Python 3.10 and 3.12. All three must pass; there is no
 network in tests, so never add a test that hits `api.datamermaid.org`.
+`.github/workflows/docs.yml` is separate: it builds the site with `--strict` on
+every pull request and, on `main`, deploys it to GitHub Pages.  That deploy
+needs the repository's Settings -> Pages source set to "GitHub Actions".
 
 ## Architecture Overview
 
@@ -212,6 +225,20 @@ examples/09_marimo_notebook.py
                        `import marimo` stays unindented because marimo's
                        tooling needs it there; a save from the editor drops
                        everything below the cells, serve() included
+mkdocs.yml             the documentation site: Material theme, `strict: true`,
+                       mkdocstrings (numpy docstrings, `filters: public`, so a
+                       module's `__all__` is what gets rendered) and
+                       pymdownx.snippets with `base_path: [.]`
+docs/index.md          `--8<-- "README.md"`; docs/examples.md is the same for
+docs/examples.md       examples/README.md.  The prose has one home: edit the
+                       READMEs, never these pages.  It is also why links out of
+                       those two READMEs are absolute github.com URLs -- a
+                       repo-relative link resolves against the wrong root once
+                       the file is inlined into a site page, and
+                       tests/test_docs.py fails if one reappears
+docs/api/*.md          one `::: datamermaid.<module>` per module, plus
+                       api/index.md for the package docstring and the module
+                       table; a new module needs a page here
 examples/_preflight.py stdlib-only helper: every example wraps its third-party
                        imports in try/except ImportError and raises
                        missing_dependency(exc), which names the interpreter and
@@ -251,5 +278,11 @@ before any request when none is found.
 - Tests are offline. Mock with `respx` against `API_BASE_URL` (see
   `tests/conftest.py` helpers) or `httpx.MockTransport`; the autouse fixtures
   isolate the token cache and default project.
+- Documentation prose lives in `README.md` and `examples/README.md`; the site
+  inlines them, so edit those and never `docs/index.md` or `docs/examples.md`.
+  Links out of those two files must be absolute `https://github.com/...` URLs.
+  A new module needs a `docs/api/` page, and a new public name needs to be in
+  its own module's `__all__` as well as the package's, or `filters: public`
+  leaves it off the site.
 - `CLAUDE.md` and `AGENTS.md` are independent files: mirror substantive edits
   to both.

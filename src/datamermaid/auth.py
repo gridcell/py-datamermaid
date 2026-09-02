@@ -35,7 +35,7 @@ import httpx
 
 from .exceptions import AuthenticationError
 
-__all__ = ["authenticate", "clear_cached_token", "get_token"]
+__all__ = ["TOKEN_ENV_VAR", "authenticate", "clear_cached_token", "get_token"]
 
 AUTH0_DOMAIN = "datamermaid.auth0.com"
 AUTHORIZE_URL = f"https://{AUTH0_DOMAIN}/authorize"

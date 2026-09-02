@@ -1,0 +1,126 @@
+# Documentation site for datamermaid, published to GitHub Pages by
+# .github/workflows/docs.yml.  Build it with the `docs` extra:
+#
+#   uv sync --extra docs
+#   uv run --extra docs mkdocs serve          # http://127.0.0.1:8000
+#   uv run --extra docs mkdocs build --strict # what CI runs
+#
+# The narrative pages are not written here: docs/index.md and docs/examples.md
+# are snippet includes of README.md and examples/README.md, which are the
+# authoritative prose and are checked by tests/test_docs.py.  Edit those, not
+# the pages under docs/.
+site_name: datamermaid
+site_description: Python client for the MERMAID coral reef monitoring API
+site_author: Dustin Sampson
+site_url: https://gridcell.github.io/py-datamermaid/
+repo_url: https://github.com/gridcell/py-datamermaid
+repo_name: gridcell/py-datamermaid
+edit_uri: ""
+copyright: MIT licensed, like mermaidr
+
+# Fail the build on a broken link, an unrecognised nav entry or a mkdocstrings
+# identifier that does not resolve, rather than shipping a site with holes.
+strict: true
+
+nav:
+  - Guide: index.md
+  - Examples: examples.md
+  - API reference:
+      - Overview: api/index.md
+      - datamermaid.auth: api/auth.md
+      - datamermaid.projects: api/projects.md
+      - datamermaid.me: api/me.md
+      - datamermaid.project_endpoints: api/project-endpoints.md
+      - datamermaid.project_data: api/project-data.md
+      - datamermaid.endpoints: api/endpoints.md
+      - datamermaid.import_: api/import.md
+      - datamermaid.client: api/client.md
+      - datamermaid.exceptions: api/exceptions.md
+      - datamermaid.utils: api/utils.md
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            docstring_section_style: table
+            members_order: source
+            # Every module declares __all__, and that is the contract the
+            # README and tests/test_docs.py hold the package to, so let griffe
+            # use it rather than filtering on a name pattern.
+            filters: public
+            heading_level: 2
+            merge_init_into_class: true
+            separate_signature: true
+            # The module-level constants (API_BASE_URL, METHODS, ...) are
+            # documented with Sphinx-style ``#:`` comments, which griffe does
+            # not read as docstrings.  Rendering members without one is what
+            # gets them onto the page, with their values.
+            show_if_no_docstring: true
+            show_root_heading: false
+            show_root_toc_entry: false
+            show_signature_annotations: true
+            show_source: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  # GitHub's slugify, so that the anchors the inlined READMEs link to -- their
+  # own tables of contents -- resolve here as well as on GitHub.
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  # `base_path: [.]` is the repository root, which is what lets docs/index.md
+  # pull in README.md.  `check_paths` turns a typo'd include into a build
+  # failure instead of a silently empty page.
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/gridcell/py-datamermaid
+      name: py-datamermaid on GitHub
+    - icon: fontawesome/solid/water
+      link: https://datamermaid.org
+      name: MERMAID
