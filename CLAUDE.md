@@ -142,9 +142,11 @@ would multiply the Linux versions.
 ## Architecture Overview
 
 `datamermaid` is a port of the R package [mermaidr](https://github.com/data-mermaid/mermaidr):
-each `mermaid_*` function maps to a same-named function without the prefix, and
-tibbles become `pandas.DataFrame`s. The README's migration table is the
-authoritative list; `tests/test_docs.py` checks it against `__all__`.
+the port is complete, and every `mermaid_*` function maps to a same-named
+function without the prefix apart from `mermaid_auth` and `mermaid_token`
+(`authenticate` and `get_token`); tibbles become `pandas.DataFrame`s. The
+README's migration table is the authoritative list; `tests/test_docs.py`
+checks it against `__all__`.
 
 ```
 src/datamermaid/

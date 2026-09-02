@@ -574,10 +574,12 @@ logging.basicConfig(level=logging.INFO)
 
 ## Migrating from mermaidr
 
-Drop the `mermaid_` prefix and you usually have the Python name. Arguments are
-singular where mermaidr's are plural (`country=` rather than `countries=`),
-results are `DataFrame`s rather than tibbles, and named lists become dicts.
-Every function mermaidr exports is listed here.
+Drop the `mermaid_` prefix and you have the Python name, the two sign-in
+functions aside: `mermaid_auth()` is `authenticate()` and `mermaid_token()` is
+`get_token()`. Arguments are singular where mermaidr's are plural (`country=`
+rather than `countries=`), results are `DataFrame`s rather than tibbles, and
+named lists become dicts. Every function mermaidr exports is listed here, and
+every one of them is ported.
 
 | mermaidr | datamermaid | Notes |
 | --- | --- | --- |
@@ -607,7 +609,7 @@ Every function mermaidr exports is listed here.
 | `mermaid_import_bulk_validate()` | `datamermaid.import_bulk_validate()` | Returns the `status`/`n` counts instead of printing them. |
 | `mermaid_import_bulk_submit()` | `datamermaid.import_bulk_submit()` | `confirm=True` replaces the console prompt. |
 | `mermaid_import_bulk_edit()` | `datamermaid.import_bulk_edit()` | `confirm=True` replaces the console prompt; `method` is required. |
-| `mermaid_get_gfcr_report()` | `datamermaid.get_gfcr_report()` | Same `project`, `save=`. Returns a `dict` of one frame per worksheet rather than a named list. Needs the `datamermaid[excel]` extra (openpyxl). |
+| `mermaid_get_gfcr_report()` | `datamermaid.get_gfcr_report()` | Same `project`, `save=`, and several projects still make one report. Returns a `dict` of one frame per worksheet rather than a named list. `save=` has to name an `.xlsx` or `.xls` file in a directory that exists, checked with a `ValueError` before the report is requested. Needs the `datamermaid[excel]` extra (openpyxl), reported as an `ImportError` before the request. |
 
 mermaidr's `%>%` re-export has no counterpart; use pandas method chaining.
 
