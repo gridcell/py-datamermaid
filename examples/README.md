@@ -21,6 +21,7 @@ signing in, then everything that needs a login.
 | [`06_project_endpoints.py`](06_project_endpoints.py) | `get_project_sites()`, `get_project_managements()`, `get_project_endpoint()`, `set_default_project()`, `as_project_ids()` | yes |
 | [`07_project_data.py`](07_project_data.py) | `get_project_data()` by method and level, `construct_endpoints()`, nested-dict results, covariates | yes |
 | [`08_error_handling.py`](08_error_handling.py) | `ValueError`, `MermaidAPIError`, `AuthenticationError`, `MermaidError` | no |
+| [`09_marimo_notebook.py`](09_marimo_notebook.py) | The same calls in a reactive [marimo](https://marimo.io) notebook: a sign-in button, `get_me()`, a project dropdown that refetches `get_project_sites()` and `get_project_data()` | signs you in |
 
 ## Running them
 
@@ -48,6 +49,49 @@ needs neither network nor an account, and the test suite runs it. Every other
 example talks to the real API at <https://api.datamermaid.org/v1/>.
 
 Python 3.10 or newer; CI runs the suite on 3.10 and 3.12.
+
+### The notebook
+
+[`09_marimo_notebook.py`](09_marimo_notebook.py) is a [marimo](https://marimo.io)
+notebook, which is a Python file like the rest — but marimo itself is an extra
+rather than a dependency, so install it first:
+
+```bash
+python -m pip install 'datamermaid[notebook]'   # or: -e '.[notebook]'
+marimo edit examples/09_marimo_notebook.py      # notebook, cells re-run as you edit
+marimo run examples/09_marimo_notebook.py       # read-only app, no code shown
+python examples/09_marimo_notebook.py           # top to bottom, as a plain script
+```
+
+With uv, name the extra on `uv run` as well as on `uv sync` — `uv run` syncs
+before it runs, and without the extra it would uninstall marimo again:
+
+```bash
+uv sync --extra notebook
+uv run --extra notebook marimo edit examples/09_marimo_notebook.py
+```
+
+The extra asks for marimo 0.13.15 or newer, which is the first release that
+runs the notebook correctly as a plain script: the cells stand down with
+`mo.stop()` while there is no token, and older marimos either let that escape
+as a traceback or ran the stopped cell's dependants anyway.
+
+Skip the extra and `python examples/09_marimo_notebook.py` says
+`ModuleNotFoundError: No module named 'marimo'`, which is the one import in
+`examples/` without the guard described below: marimo's own tooling looks for a
+top-level `import marimo` and cannot save over a file that has none, so it has
+to sit outside a `try`. A missing `datamermaid` does report itself the usual
+way, naming `'datamermaid[notebook]'` as the install — under `python`, at
+least; see below.
+
+marimo opens the notebook with a warning that it "has errors": the import guard
+every example here carries is module-level code, which a notebook file is not
+supposed to have. Nothing breaks, because `marimo edit` and `marimo run` load a
+notebook from its parse tree and never execute module-level code — which is
+also why the guard only speaks up under `python examples/09_marimo_notebook.py`,
+and a missing `datamermaid` reports itself from the first cell instead. Saving
+from the editor regenerates the file from its cells and drops the guard; the
+docstring survives.
 
 ### Troubleshooting
 
@@ -108,9 +152,11 @@ No example hardcodes a token, and none prints more than a masked prefix of one.
 
 ## Choosing a project
 
-The project-scoped examples (06, 07) need a project id. They read
+The project-scoped examples (06, 07, 09) need a project id. They read
 `MERMAID_EXAMPLE_PROJECT` if it is set, and otherwise use the first project on
-your account, so nothing here depends on a UUID that may go away:
+your account — the notebook puts the named project in its dropdown, whether or
+not it is one of your own, and preselects it — so nothing here depends on a
+UUID that may go away:
 
 ```bash
 export MERMAID_EXAMPLE_PROJECT="00673bec-..."

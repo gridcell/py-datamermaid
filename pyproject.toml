@@ -32,6 +32,14 @@ dependencies = ["httpx>=0.24", "pandas>=1.5"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5"]
+# Only examples/09_marimo_notebook.py needs this; the library itself never
+# imports marimo, and the test suite only parses that example.  The floor is
+# what running that notebook as a plain script needs: earlier marimos mishandle
+# the `mo.stop()` that stands in for "no token yet" -- up to 0.12 it escapes as
+# a MarimoStopError traceback, and through 0.13.0 the stopped cell's dependants
+# run anyway -- so an unauthenticated `python examples/09_marimo_notebook.py`
+# failed instead of reporting that it found no token.
+notebook = ["marimo>=0.13.15"]
 
 [project.urls]
 Homepage = "https://github.com/gridcell/py-datamermaid"

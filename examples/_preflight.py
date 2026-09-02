@@ -27,6 +27,12 @@ traceback rather than following it::
 
         raise missing_dependency(exc) from None
 
+An example that needs something outside ``datamermaid``'s own dependencies --
+``examples/09_marimo_notebook.py`` needs marimo -- passes the extra that
+provides it, so the command in the message covers either failure::
+
+    raise missing_dependency(exc, distribution="datamermaid[notebook]") from None
+
 Three things can go wrong, and they need three different fixes: the package is
 absent (install it), the package is present but its own dependencies are not
 (reinstall it), or the package imported and then refused the name the example
@@ -49,6 +55,9 @@ __all__ = ["missing_dependency"]
 
 #: The PyPI name to install.  ``httpx`` and ``pandas`` come with it, so a
 #: missing one of those is fixed the same way as a missing ``datamermaid``.
+#: An example that needs more than the package itself -- the marimo notebook
+#: needs marimo -- passes ``distribution="datamermaid[<extra>]"`` instead, so
+#: the message names an install that covers what *it* imports.
 DISTRIBUTION = "datamermaid"
 
 #: Where the longer version of this advice lives, for the message to point at.
@@ -57,21 +66,54 @@ TROUBLESHOOTING = 'examples/README.md ("Troubleshooting")'
 #: The way out that does not involve choosing an interpreter at all.  Every
 #: message here exists because the example ran against one environment while
 #: the package went into another; `uv run` builds the environment and runs the
-#: script in it, so the two cannot disagree.
-_UV_ALTERNATIVE = """\
+#: script in it, so the two cannot disagree.  ``{extra}`` carries the extra an
+#: example needs, since `uv run` syncs before it runs and would otherwise
+#: uninstall it again.
+_UV_TEMPLATE = """\
 Or, from a checkout of this repository, hand the whole question to uv
 (<https://docs.astral.sh/uv/>) -- it resolves, installs and runs in one step,
 against an interpreter it fetches itself if it has to:
 
-    uv sync
-    uv run examples/<script>.py"""
+    uv sync{extra}
+    uv run{extra} examples/<script>.py"""
+
+#: The plain-``datamermaid`` rendering of the above, which is what all but one
+#: example needs.
+_UV_ALTERNATIVE = _UV_TEMPLATE.format(extra="")
 
 #: Frames that belong to the import machinery rather than to the package whose
 #: import failed.
 _IMPORT_MACHINERY = frozenset({"importlib", "runpy"})
 
 
-def missing_dependency(error: ImportError) -> SystemExit:
+def _extras(distribution: str) -> str:
+    """The extras named by ``datamermaid[notebook]``, ``""`` when there are none."""
+    return distribution.partition("[")[2].removesuffix("]")
+
+
+def _package_name(distribution: str) -> str:
+    """``datamermaid[notebook]`` -> ``datamermaid``: what is importable, not installable."""
+    return distribution.partition("[")[0]
+
+
+def _installable(distribution: str) -> str:
+    """The distribution as a shell word.  Extras need quoting; zsh globs ``[]``."""
+    return f"'{distribution}'" if _extras(distribution) else distribution
+
+
+def _editable(distribution: str) -> str:
+    """The same install from a checkout of this repository, extras included."""
+    extras = _extras(distribution)
+    return f"-e '.[{extras}]'" if extras else "-e ."
+
+
+def _uv_alternative(distribution: str) -> str:
+    """:data:`_UV_TEMPLATE` with whatever extra the example needs kept installed."""
+    extras = _extras(distribution)
+    return _UV_TEMPLATE.format(extra=f" --extra {extras}" if extras else "")
+
+
+def missing_dependency(error: ImportError, *, distribution: str = DISTRIBUTION) -> SystemExit:
     """Return a ``SystemExit`` explaining an import failure in an example.
 
     Distinguishes the three cases that look alike in a traceback: a package
@@ -86,6 +128,11 @@ def missing_dependency(error: ImportError) -> SystemExit:
         The exception raised by the example's import block.  ``ImportError``
         rather than ``ModuleNotFoundError`` so that a package which imports but
         does not export what the example asked for is covered too.
+    distribution : str, optional
+        What to tell the reader to install, ``"datamermaid"`` by default.  An
+        example that imports something outside the package's own dependencies
+        passes the extra that provides it -- ``"datamermaid[notebook]"`` for
+        the marimo notebook -- so that one install fixes either failure.
 
     Returns
     -------
@@ -100,18 +147,24 @@ def missing_dependency(error: ImportError) -> SystemExit:
     >>> print(missing_dependency(exc))  # doctest: +ELLIPSIS
     datamermaid is not installed for this interpreter.
     ...
+    >>> exc = ModuleNotFoundError("No module named 'marimo'", name="marimo")
+    >>> print(missing_dependency(exc, distribution="datamermaid[notebook]"))  # doctest: +ELLIPSIS
+    marimo is not installed for this interpreter.
+    ...
+        ... -m pip install 'datamermaid[notebook]'
+    ...
     """
     package = _importing_package(error)
 
     if not isinstance(error, ModuleNotFoundError):
         # Nothing is missing: the import got far enough to fail on what it
         # found, e.g. `from datamermaid import <name a different version has>`.
-        return SystemExit(_import_failed(package or error.name, error))
+        return SystemExit(_import_failed(package or error.name, error, distribution=distribution))
 
     missing = error.name or "the package this example needs"
     if package in (None, missing):
-        return SystemExit(_not_installed(missing))
-    return SystemExit(_broken_install(package, missing, error))
+        return SystemExit(_not_installed(missing, distribution=distribution))
+    return SystemExit(_broken_install(package, missing, error, distribution=distribution))
 
 
 def _interpreter() -> str:
@@ -152,36 +205,44 @@ def _root(frame: TracebackType) -> str:
     return "" if root.startswith("_frozen") else root
 
 
-def _not_installed(missing: str) -> str:
+def _not_installed(missing: str, *, distribution: str = DISTRIBUTION) -> str:
     """The package is absent: install it, into *this* interpreter."""
+    # The extras case names marimo, or whatever else an example needs, so
+    # "httpx and pandas" would be an incomplete list rather than a helpful one.
+    brings = " -- it brings httpx and pandas with it" if distribution == DISTRIBUTION else ""
+    install = _installable(distribution)
+    editable = _editable(distribution)
     return f"""\
 {missing} is not installed for this interpreter.
 
     interpreter: {_interpreter()}
     missing:     {missing}
 
-Install {DISTRIBUTION} for that interpreter -- it brings httpx and pandas with
-it.  Spell it `python -m pip`, not a bare `pip`: a bare `pip` may install into
-a different interpreter than the one that just failed, which is the usual
-reason a package looks installed and still cannot be imported.
+Install {install} for that interpreter{brings}.
+Spell it `python -m pip`, not a bare `pip`: a bare `pip` may install into a
+different interpreter than the one that just failed, which is the usual reason
+a package looks installed and still cannot be imported.
 
-    {sys.executable} -m pip install {DISTRIBUTION}
-    {sys.executable} -m pip install -e .    # from a checkout of this repository
+    {sys.executable} -m pip install {install}
+    {sys.executable} -m pip install {editable}    # from a checkout of this repository
 
-{_UV_ALTERNATIVE}
+{_uv_alternative(distribution)}
 
 More at {TROUBLESHOOTING}."""
 
 
-def _broken_install(package: str, missing: str, error: ImportError) -> str:
+def _broken_install(
+    package: str, missing: str, error: ImportError, *, distribution: str = DISTRIBUTION
+) -> str:
     """The package is present but unusable: reinstall it with its dependencies."""
+    install = _installable(distribution)
     diagnosis = (
-        f"That is a half-finished install of {DISTRIBUTION} itself: it is there, but\n"
-        f"{missing} -- which it depends on -- is not."
-        if package == DISTRIBUTION
+        f"That is a half-finished install of {_package_name(distribution)} itself: it is\n"
+        f"there, but {missing} -- which it depends on -- is not."
+        if package == _package_name(distribution)
         else (
             f"That is a half-finished install of {package} rather than anything to do\n"
-            f"with {DISTRIBUTION}."
+            f"with {_package_name(distribution)}."
         )
     )
     return f"""\
@@ -201,14 +262,16 @@ A fresh virtual environment avoids the whole class of problem, since nothing
 there is left over from an earlier install:
 
     {sys.executable} -m venv .venv
-    .venv/bin/python -m pip install {DISTRIBUTION}    # .venv\\Scripts\\python.exe on Windows
+    .venv/bin/python -m pip install {install}    # .venv\\Scripts\\python.exe on Windows
 
-{_UV_ALTERNATIVE}
+{_uv_alternative(distribution)}
 
 More at {TROUBLESHOOTING}."""
 
 
-def _import_failed(package: str | None, error: ImportError) -> str:
+def _import_failed(
+    package: str | None, error: ImportError, *, distribution: str = DISTRIBUTION
+) -> str:
     """The import failed on something other than a missing module.
 
     Two ways that happens: the package is a different release than the example
@@ -218,10 +281,15 @@ def _import_failed(package: str | None, error: ImportError) -> str:
     recommends, so the error itself is quoted and both are named.
     """
     subject = package or "A package this example needs"
-    target = package or DISTRIBUTION
+    target = package or _package_name(distribution)
+    ours = target == _package_name(distribution)
+    # Upgrading the package this repository ships means the distribution, extras
+    # and all; upgrading anything else means just that package.
+    upgrade = _installable(distribution) if ours else target
     checkout = (
-        f"\n    {sys.executable} -m pip install -e .    # from a checkout of this repository"
-        if target == DISTRIBUTION
+        f"\n    {sys.executable} -m pip install {_editable(distribution)}"
+        "    # from a checkout of this repository"
+        if ours
         else ""
     )
     return f"""\
@@ -237,7 +305,7 @@ is a different release than these examples, which are written against this
 repository; upgrade it rather than reinstalling it:
 
     {sys.executable} -m pip show {target}
-    {sys.executable} -m pip install --upgrade {target}{checkout}
+    {sys.executable} -m pip install --upgrade {upgrade}{checkout}
 
 If instead it mentions a compiled extension or a binary incompatibility, two
 installed packages disagree with each other; reinstall {target} together with

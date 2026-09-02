@@ -13,6 +13,13 @@ third-party imports in ``try``/``except ImportError`` and hands the failure to
 that has no ``datamermaid`` (or a half-installed ``httpx``) gets one actionable
 sentence rather than a traceback from inside a dependency.  That helper is
 exercised directly, since no test can run an example in a broken environment.
+
+``examples/09_marimo_notebook.py`` is a marimo notebook, which is a Python file
+and so is held to all of the above -- plus the parts of the notebook format
+that an ordinary-looking edit would break: the top-level ``import marimo`` that
+marimo needs in order to save the file, and the rule that a cell runs in its own
+namespace and therefore cannot read a module-level name.  marimo is an extra, so
+none of this may import it.
 """
 
 from __future__ import annotations
@@ -45,6 +52,14 @@ GUARDED_PACKAGES = frozenset({"datamermaid", "httpx", "pandas"})
 
 #: A function the examples index claims exists, e.g. ``` `get_projects()` ```.
 BACKTICKED_CALL = re.compile(r"`(\w+)\(\)`")
+
+#: The marimo notebooks among the examples.  A notebook is a Python file, so it
+#: is held to every rule above as well -- and to the ones below, which are the
+#: parts of the notebook format that a well-meaning edit would quietly break.
+MARIMO_NOTEBOOKS = sorted(path for path in EXAMPLE_SCRIPTS if "marimo.App(" in path.read_text())
+
+#: An extra an example tells the reader to install, e.g. ``datamermaid[notebook]``.
+NAMED_EXTRA = re.compile(r"""distribution=["']datamermaid\[(\w+)\]["']""")
 
 
 @pytest.fixture(scope="module")
@@ -325,6 +340,43 @@ def test_preflight_reports_a_broken_install_of_datamermaid_itself(preflight, mon
     assert f"{sys.executable} -m pip install --force-reinstall datamermaid" in message
 
 
+def test_preflight_names_the_extra_the_example_needs(preflight):
+    """An example needing more than the package itself gets that install named.
+
+    The marimo notebook is the case: ``pip install datamermaid`` would leave it
+    exactly as broken, so every command in the message carries the extra --
+    quoted, since a bare ``datamermaid[notebook]`` is a glob in zsh.
+    """
+    error = ModuleNotFoundError("No module named 'marimo'", name="marimo")
+
+    message = str(preflight.missing_dependency(error, distribution="datamermaid[notebook]"))
+
+    assert message.startswith("marimo is not installed for this interpreter.")
+    assert f"{sys.executable} -m pip install 'datamermaid[notebook]'" in message
+    assert f"{sys.executable} -m pip install -e '.[notebook]'" in message
+    # `uv run` syncs first, so it has to be told about the extra as well.
+    assert "uv sync --extra notebook" in message
+    assert "uv run --extra notebook examples/" in message
+    # The plain message's aside about what datamermaid brings with it would be
+    # an incomplete list here, so it is dropped rather than left wrong.
+    assert "httpx and pandas" not in message
+
+
+def test_preflight_extra_leaves_the_package_name_alone(preflight):
+    """The extra is for installing, not for diagnosing: no `datamermaid[notebook]` imports."""
+    error = ImportError("No module named 'psutil'")
+
+    message = preflight._broken_install(
+        "marimo", "psutil", error, distribution="datamermaid[notebook]"
+    )
+
+    assert "half-finished install of marimo rather than anything to do" in message
+    assert "with datamermaid." in message, "the diagnosis names the package, extras and all"
+    assert f"{sys.executable} -m pip install --force-reinstall marimo" in message
+    # The install advice, unlike the diagnosis, does carry the extra.
+    assert "-m pip install 'datamermaid[notebook]'" in message
+
+
 def test_preflight_doctests_run(preflight):
     """``testpaths`` excludes ``examples/``, so collect its doctests by hand."""
     results = doctest.testmod(preflight, optionflags=doctest.ELLIPSIS, verbose=False)
@@ -336,6 +388,111 @@ def test_preflight_needs_only_the_standard_library():
     """It reports broken installs, so it must not depend on anything installable."""
     tree = ast.parse((EXAMPLES / "_preflight.py").read_text())
     assert _imported_packages(tree.body) <= set(sys.stdlib_module_names)
+
+
+def _cells(tree: ast.Module) -> list[ast.FunctionDef]:
+    """The ``@app.cell``-decorated functions of a marimo notebook, in file order."""
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and any(
+            isinstance(decorator, ast.Attribute)
+            and decorator.attr == "cell"
+            and isinstance(decorator.value, ast.Name)
+            and decorator.value.id == "app"
+            for decorator in node.decorator_list
+        )
+    ]
+
+
+def _bound(nodes: list[ast.stmt]) -> set[str]:
+    """Every name bound anywhere under ``nodes`` -- imported, assigned or defined."""
+    names = set()
+    for parent in nodes:
+        for node in ast.walk(parent):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                names.add(node.id)
+            elif isinstance(node, ast.Import | ast.ImportFrom):
+                names.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                names.add(node.name)
+    return names
+
+
+def _loaded(nodes: list[ast.stmt]) -> set[str]:
+    """Every name read anywhere under ``nodes``."""
+    return {
+        node.id
+        for parent in nodes
+        for node in ast.walk(parent)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+
+
+def test_there_is_a_marimo_notebook():
+    assert MARIMO_NOTEBOOKS, "examples/ has no marimo notebook"
+
+
+@pytest.mark.parametrize("path", MARIMO_NOTEBOOKS, ids=lambda path: path.name)
+def test_notebook_is_shaped_like_a_marimo_notebook(path: Path):
+    """The structure marimo looks for when it loads the file, and `python` when it runs it.
+
+    marimo is an extra, so the suite cannot open the notebook to find out; what
+    it can check is that the file still declares an ``app``, still hangs its
+    cells off it, and still runs them under the main guard.
+    """
+    source = path.read_text()
+    tree = ast.parse(source, str(path))
+
+    # `import marimo`, unindented: marimo's own file handling splits the file on
+    # exactly that line to find the header it preserves across a save, and
+    # raises rather than saving when the file has no such line.
+    assert re.search(r"^import marimo$", source, flags=re.MULTILINE), (
+        f"{path.name} has no top-level `import marimo`, which marimo needs to save it"
+    )
+
+    assigned = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "app" for target in node.targets)
+    ]
+    assert assigned, f"{path.name} never assigns `app = marimo.App(...)`"
+
+    assert _cells(tree), f"{path.name} has no @app.cell functions"
+    assert "app.run()" in source, f"{path.name} never runs its cells"
+
+
+@pytest.mark.parametrize("path", MARIMO_NOTEBOOKS, ids=lambda path: path.name)
+def test_notebook_cells_do_not_read_module_globals(path: Path):
+    """A cell runs in its own namespace, so a module-level import does not reach it.
+
+    Nothing in the file makes that visible -- ``import datamermaid`` at the top
+    and ``datamermaid.get_me()`` in a cell looks fine and raises ``NameError``
+    when run.  Every name a cell uses has to be a parameter of the cell or bound
+    inside it.
+    """
+    tree = ast.parse(path.read_text(), str(path))
+    globals_ = _bound([node for node in tree.body if not isinstance(node, ast.FunctionDef)])
+
+    for cell in _cells(tree):
+        available = {argument.arg for argument in cell.args.args} | _bound(cell.body)
+        leaked = sorted((_loaded(cell.body) & globals_) - available)
+        assert not leaked, (
+            f"{path.name}: cell {cell.name}() reads {leaked} from module scope, "
+            "which a marimo cell cannot see"
+        )
+
+
+@pytest.mark.parametrize("path", EXAMPLE_SCRIPTS, ids=lambda path: path.name)
+def test_example_only_names_extras_that_exist(path: Path):
+    """An example that tells the reader to install an extra must name a real one."""
+    declared = (ROOT / "pyproject.toml").read_text()
+    for extra in NAMED_EXTRA.findall(path.read_text()):
+        assert re.search(rf"^{extra} = \[", declared, flags=re.MULTILINE), (
+            f"{path.name} points at datamermaid[{extra}], which pyproject.toml does not define"
+        )
 
 
 def test_examples_readme_indexes_every_script():
