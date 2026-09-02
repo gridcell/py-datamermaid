@@ -6,8 +6,10 @@ regressed before: a marketplace action pinned to a major that still ships
 Node 20 (the runners warn about it and will eventually refuse), and a deploy
 job that reaches ``actions/deploy-pages`` without Pages having been switched to
 "GitHub Actions" as its source, which answers 404 and reads as a broken build.
-The CI workflow gets one guard of its own: its test matrix has to name every
-Python minor ``pyproject.toml``'s classifiers advertise.
+The CI workflow gets guards of its own: its test matrix has to name every
+Python minor ``pyproject.toml``'s classifiers advertise, and it has to keep
+running on Windows and macOS as well as Linux -- a cheap thing to lose to a
+merge, and nothing else in the suite would notice.
 
 The files are parsed as text, like ``mkdocs.yml`` in ``tests/test_docs.py``:
 the offline suite has no PyYAML, and the shapes these workflows use are simple
@@ -122,3 +124,26 @@ def test_test_matrix_reports_every_version(workflows):
     """`fail-fast: false`: one broken interpreter must not hide the others."""
     test = _jobs(workflows["ci.yml"])["test"]
     assert "fail-fast: false" in test
+
+
+def test_test_matrix_runs_on_windows_and_macos(workflows):
+    """The package is pure Python, so one interpreter per OS is the coverage.
+
+    The Linux leg stays the version matrix: the ``os`` dimension names only
+    ``ubuntu-latest``, and the other two runners arrive as ``include`` entries,
+    which GitHub appends as single jobs instead of multiplying the versions by
+    three.
+    """
+    test = _jobs(workflows["ci.yml"])["test"]
+    assert "runs-on: ${{ matrix.os }}" in test
+
+    dimension = re.search(r"^\s+os:\s*\[([^\]]*)\]", test, re.M)
+    assert dimension, "ci.yml's test job has no os matrix dimension"
+    assert re.findall(r"[\w-]+-latest", dimension.group(1)) == ["ubuntu-latest"], (
+        "the os dimension multiplies the Python matrix; add runners under include: instead"
+    )
+
+    included = re.findall(r"^\s+- os:\s*([\w-]+-latest)", test, re.M)
+    assert set(included) == {"windows-latest", "macos-latest"}, (
+        f"ci.yml's test job includes {sorted(included)}, not Windows and macOS"
+    )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import socket
 import stat
 import threading
@@ -84,7 +85,11 @@ def test_write_cache_is_owner_only_and_readable(token_cache_path):
         "access_token": "secret-token",
         "expires_at": expires_at,
     }
-    assert stat.S_IMODE(token_cache_path.stat().st_mode) == 0o600
+    # Windows has no POSIX permission bits: the mode handed to ``os.open``
+    # only decides the read-only attribute there, and ``stat()`` reports 0o666
+    # for anything writable.  The file is still per-user, under the profile.
+    if os.name != "nt":
+        assert stat.S_IMODE(token_cache_path.stat().st_mode) == 0o600
     assert auth.read_cached_token() == "secret-token"
 
 
@@ -414,7 +419,15 @@ def test_callback_server_falls_back_to_an_ephemeral_port():
     import socket
 
     blocker = socket.socket()
-    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # SO_REUSEADDR means opposite things on the two platforms: on POSIX it only
+    # relaxes the TIME_WAIT rule, so a live listener still refuses a second
+    # bind, but on Windows it lets one succeed outright -- and HTTPServer sets
+    # it.  SO_EXCLUSIVEADDRUSE is the Windows way to make the port genuinely
+    # unavailable, which is what this test needs the server to trip over.
+    if os.name == "nt":
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         blocker.bind(("127.0.0.1", auth.DEFAULT_REDIRECT_PORT))
         blocker.listen(1)

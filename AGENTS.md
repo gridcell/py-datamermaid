@@ -187,7 +187,14 @@ nothing here takes `--frozen`.
 CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, and
 `pytest` under uv on Python 3.10, 3.11, 3.12 and 3.13. All three must pass;
 there is no network in tests, so never add a test that hits
-`api.datamermaid.org`.
+`api.datamermaid.org`.  The Python matrix is the Linux leg; `windows-latest`
+and `macos-latest` arrive as `include` entries running 3.12 only, so the
+package stays honest about paths, file permissions and newlines without
+tripling the run.  Lint is a single Linux job.  A test that pokes at the
+filesystem or a socket has to hold on all three: `tests/test_auth.py` guards
+the cache mode behind `os.name != "nt"` (Windows has no POSIX permission bits)
+and occupies the redirect port with `SO_EXCLUSIVEADDRUSE` there, because
+Windows `SO_REUSEADDR` would let the server bind the port anyway.
 `.github/workflows/docs.yml` is separate: it builds the site with `--strict` on
 every pull request and, on `main`, deploys it to GitHub Pages.  Publishing needs
 Settings -> Pages -> Source set to "GitHub Actions"; its `configure` job sets
@@ -195,8 +202,10 @@ that itself with `actions/configure-pages` (`enablement: true`), and if the
 token is not allowed to, the deploy is skipped with a warning in the run summary
 rather than failing with a 404.  `tests/test_workflows.py` is the drift guard
 for both workflows: it keeps every `actions/*` pin on a Node 24 major, keeps
-the deploy gated on that `configure` job, and keeps the test matrix equal to the
-Python versions `pyproject.toml` advertises.
+the deploy gated on that `configure` job, keeps the test matrix equal to the
+Python versions `pyproject.toml` advertises, and keeps the Windows and macOS
+runners in the matrix as `include` entries rather than as an OS dimension that
+would multiply the Linux versions.
 
 ## Architecture Overview
 
