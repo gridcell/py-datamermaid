@@ -34,8 +34,9 @@ python -m pip install datamermaid
 Or, from a checkout of this repository:
 
 ```bash
-python -m pip install -e .          # the package
-python -m pip install -e ".[dev]"   # plus pytest, respx and ruff
+python -m pip install -e .               # the package
+python -m pip install -e ".[dev]"        # plus pytest, respx and ruff
+python -m pip install -e ".[notebook]"   # plus marimo, for examples/09_marimo_notebook.py
 ```
 
 Or with [uv](https://docs.astral.sh/uv/), which needs no interpreter of its own
@@ -194,6 +195,16 @@ data, and error handling:
 python examples/01_public_projects.py   # public data; no account needed
 python examples/03_authenticate.py      # sign in and cache a token
 python examples/07_project_data.py      # survey data, by method and level
+```
+
+The last of them, [`09_marimo_notebook.py`](examples/09_marimo_notebook.py), is
+a [marimo](https://marimo.io) notebook rather than a script: a sign-in button
+and a project dropdown, with the cells that read them refetching on their own.
+marimo is an extra, since nothing in the package needs it:
+
+```bash
+python -m pip install 'datamermaid[notebook]'
+marimo edit examples/09_marimo_notebook.py
 ```
 
 [`examples/README.md`](examples/README.md) indexes them and says which need a
@@ -581,6 +592,10 @@ back out again. Adding `--python 3.10` re-syncs against another interpreter,
 fetching it if need be, which is how to reproduce the CI matrix locally. No
 `uv.lock` is committed: this is a library with deliberately loose pins, and a
 lockfile would pin the one resolution the matrix exists to vary.
+
+`notebook` is the other extra, and it is only ever needed by hand: it installs
+marimo for `examples/09_marimo_notebook.py`, which the suite parses like every
+other example rather than running, so neither CI nor `pytest` wants it.
 
 `tests/test_docs.py` runs the quickstart and checks that this README's
 migration table and `get_project_data()` matrix agree with the package, so

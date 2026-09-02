@@ -32,6 +32,9 @@ dependencies = ["httpx>=0.24", "pandas>=1.5"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "respx>=0.20", "ruff>=0.5"]
+# Only examples/09_marimo_notebook.py needs this; the library itself never
+# imports marimo, and the test suite only parses that example.
+notebook = ["marimo>=0.10"]
 
 [project.urls]
 Homepage = "https://github.com/gridcell/py-datamermaid"

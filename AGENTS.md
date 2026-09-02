@@ -151,6 +151,15 @@ uv run python examples/quickstart.py
 uv run --python 3.10 --extra dev pytest   # the other half of the CI matrix
 ```
 
+The `notebook` extra (marimo, for `examples/09_marimo_notebook.py`) is never
+needed by the suite -- that example is parsed like the rest -- but it has its
+own commands:
+
+```bash
+uv run --extra notebook marimo edit examples/09_marimo_notebook.py
+uv run --extra notebook python examples/09_marimo_notebook.py  # as a script
+```
+
 `--extra dev` on `uv run` too: it syncs before running, and without the extra
 it may uninstall the dev tools. `uv.lock` and `.python-version` are gitignored
 on purpose — the pins are loose and the matrix is meant to vary them — so
@@ -185,6 +194,14 @@ tests/                 pytest + respx; fixtures/ holds trimmed real MERMAID CSVs
 examples/quickstart.py the README walk-through on an httpx.MockTransport (run by tests)
 examples/NN_*.py       numbered, runnable scripts per capability; they hit the real
                        API, so tests/test_examples.py only parses them (drift guard)
+examples/09_marimo_notebook.py
+                       the one example that is a marimo notebook rather than a
+                       script (`marimo.App`, @app.cell, app.run() under the main
+                       guard) -- authenticated walk-through driven by a sign-in
+                       button and a project dropdown.  marimo is the `notebook`
+                       extra, not a dependency; a cell cannot see module-level
+                       names, so each imports what it uses, and `import marimo`
+                       stays unindented because marimo's tooling needs it there
 examples/_preflight.py stdlib-only helper: every example wraps its third-party
                        imports in try/except ImportError and raises
                        missing_dependency(exc), which names the interpreter and
@@ -192,8 +209,10 @@ examples/_preflight.py stdlib-only helper: every example wraps its third-party
                        absent) or upgrade (imported, wrong version) -- instead
                        of letting a traceback surface from inside httpx.  The
                        handler puts examples/ on sys.path first, so it works
-                       under `python -P` too.  `_`-prefixed files in examples/
-                       are helpers, not examples.
+                       under `python -P` too.  `distribution=` names an extra
+                       ("datamermaid[notebook]") for an example that needs more
+                       than the package.  `_`-prefixed files in examples/ are
+                       helpers, not examples.
 ```
 
 Request flow: a public function resolves its `client=`/`token=` arguments via
